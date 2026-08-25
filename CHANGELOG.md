@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-25
+
 ### Added
 
 - The app now uses the shared OpenKakutou design system for its layout and visual style, and can load and save a stage file (background, camera, and layer data) through the underlying stage library — the on-screen file loading, editing, and save screens themselves come in later updates.
+
+[Unreleased]: https://github.com/openkakutou/stage-editor/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/openkakutou/stage-editor/releases/tag/v0.2.0
