@@ -1,5 +1,41 @@
-import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { describe, expect, it, vi } from "vitest";
+import {
+  getStageDocument,
+  resetStageDocumentForTests,
+} from "./document/stage-document-store.ts";
 import { renderApp } from "./main.ts";
+import { resetWasmBridgeForTests } from "./wasm/bridge.ts";
+import type { WasmBridgeOptions } from "./wasm/bridge.ts";
+
+const publicWasmDir = path.resolve(import.meta.dirname, "..", "public", "wasm");
+const testBridgeOptions: WasmBridgeOptions = {
+  fetchWasmExecSource: async () =>
+    readFileSync(path.join(publicWasmDir, "wasm_exec.js"), "utf-8"),
+  fetchWasmBytes: async () =>
+    new Uint8Array(readFileSync(path.join(publicWasmDir, "stage.wasm"))),
+};
+const sampleDefText = readFileSync(
+  path.resolve(import.meta.dirname, "wasm", "testdata", "sample.def"),
+  "utf-8",
+);
+
+function withRelativePath(file: File, relativePath: string): File {
+  Object.defineProperty(file, "webkitRelativePath", { value: relativePath });
+  return file;
+}
+
+async function selectFolder(root: HTMLElement, files: File[]): Promise<void> {
+  const input = root.querySelector('input[type="file"]') as HTMLInputElement;
+  Object.defineProperty(input, "files", { value: files, configurable: true });
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+  await vi.waitFor(() => {
+    const status = root.querySelector('[role="status"]');
+    if (status?.textContent?.includes("Reading"))
+      throw new Error("still loading");
+  });
+}
 
 describe("renderApp", () => {
   it("mounts a wuik-app-shell root frame with a toolbar title including the version", () => {
@@ -17,6 +53,14 @@ describe("renderApp", () => {
 
     const main = shell?.querySelector("main");
     expect(main).not.toBeNull();
+  });
+
+  it("renders the stage file input inside the main content area", () => {
+    const root = document.createElement("div");
+
+    renderApp(root, "0.1.0");
+
+    expect(root.querySelector('input[type="file"]')).not.toBeNull();
   });
 
   it("does not slot anything into the sidebar region", () => {
@@ -57,5 +101,50 @@ describe("renderApp", () => {
     expect(root.querySelector('[slot="toolbar"]')?.textContent).toBe(
       "Stage Editor — v",
     );
+  });
+});
+
+describe("renderApp — stage document store integration", () => {
+  it("stores a successfully loaded stage, ready for later editor screens", async () => {
+    resetWasmBridgeForTests();
+    resetStageDocumentForTests();
+    const root = document.createElement("div");
+    renderApp(root, "0.1.0", { bridgeOptions: testBridgeOptions });
+
+    await selectFolder(root, [
+      withRelativePath(
+        new File([sampleDefText], "stage.def"),
+        "pack/stage.def",
+      ),
+      withRelativePath(
+        new File(["sff-bytes"], "stage0.sff"),
+        "pack/stage0.sff",
+      ),
+    ]);
+
+    expect(getStageDocument()?.fileName).toBe("stage.def");
+    expect(getStageDocument()?.sffFileName).toBe("stage0.sff");
+  });
+
+  it("fully replaces the stored stage on a second load, with no leftover from the first", async () => {
+    resetWasmBridgeForTests();
+    resetStageDocumentForTests();
+    const root = document.createElement("div");
+    renderApp(root, "0.1.0", { bridgeOptions: testBridgeOptions });
+
+    await selectFolder(root, [
+      withRelativePath(new File([sampleDefText], "stage.def"), "a/stage.def"),
+      withRelativePath(new File(["sff-bytes"], "stage0.sff"), "a/stage0.sff"),
+    ]);
+    expect(getStageDocument()?.relativePath).toBe("a/stage.def");
+
+    await selectFolder(root, [
+      withRelativePath(new File([sampleDefText], "other.def"), "b/other.def"),
+      withRelativePath(new File(["sff-bytes"], "stage0.sff"), "b/stage0.sff"),
+    ]);
+
+    const current = getStageDocument();
+    expect(current?.fileName).toBe("other.def");
+    expect(current?.relativePath).toBe("b/other.def");
   });
 });

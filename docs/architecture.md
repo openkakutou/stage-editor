@@ -14,7 +14,9 @@ in addition to `load`.
 
 ```mermaid
 flowchart LR
-    app["app\n(src/main.ts)"] --> wasm["wasm\n(src/wasm/)"]
+    app["app\n(src/main.ts)"] --> input["input\n(src/input/)"]
+    input --> wasm["wasm\n(src/wasm/)"]
+    input --> document["document\n(src/document/)"]
     wasm -.->|fetch + WebAssembly.instantiate| module["stage.wasm\n(public/wasm/, gitignored)"]
     scripts["scripts\n(scripts/download-wasm.mjs)"] -.->|fetches at dev-setup time| module
 
@@ -23,12 +25,33 @@ flowchart LR
 
 - **`app`** (`src/main.ts`, `src/version.ts`, `src/style.css`) — the entry
   point. Builds the root layout: the org's shared `@openkakutou/web-ui-kit`
-  app shell, a toolbar (app title + version) plus an empty main content
-  region, ready for the file input and editing screens that later backlog
-  items add. No sidebar/tabs slotted yet. No save/dirty-state affordance
+  app shell, a toolbar (app title + version) plus the stage file input as
+  main content. No sidebar/tabs slotted yet. No save/dirty-state affordance
   either — no editing capability exists yet, so a disabled save button or
   "unsaved changes" indicator would be a permanently non-functional
   control, not a useful signal.
+- **`input`** (`src/input/`) — the stage folder input (backlog item 002).
+  `folder-entries.ts` gathers files from a folder selection or a
+  drag-and-drop. `stage-file-input.ts` picks which gathered file is the
+  stage's own `.def` (auto if there's exactly one, otherwise the caller
+  must ask the user), reads and loads it through `wasm.loadStage`, then
+  resolves the `.def`'s referenced sprite sheet from that same folder
+  listing by filename — see the identical logic's own rationale in
+  `stage-viewer-web`'s `.vibe/decisions/001-sprite-sheet-resolved-by-basename-with-case-insensitive-fallback.md`
+  (ported here verbatim, not re-derived). `stage-file-input-view.ts`
+  renders the folder-picker + drag-and-drop UI on top of that logic — the
+  same success/error copy as `stage-viewer-web`'s own view, since nothing
+  about the interaction is editor-specific yet.
+- **`document`** (`src/document/`) — `stage-document-store.ts` holds the
+  currently loaded stage in memory (a plain module-level get/set pair, no
+  persistence): the file name, the parsed `StageData`, the original
+  `.def` bytes (needed later by `saveStage`'s byte-exact-if-unchanged
+  comparison), and the resolved sprite sheet's name/bytes. The single
+  place later editor screens (the characteristics/BG element editor, item
+  003; save/export, item 004) will read from and write back to. Loading a
+  new folder always fully replaces the previous document, with no
+  confirmation — nothing is editable yet, so there is no unsaved state a
+  replace could lose.
 - **`wasm`** (`src/wasm/`) — the bridge to the `stage` WebAssembly module.
   `bridge.ts` loads `wasm_exec.js` and instantiates `stage.wasm`
   client-side (both fetched from `public/wasm/`, gitignored — see
@@ -38,9 +61,8 @@ flowchart LR
   that `stage-viewer-web`'s read-only bridge doesn't. `types.ts` is the
   TypeScript mirror of the module's JSON contract (`StageData` and its
   nested shapes, plus `StageResult`/`SaveResult`) — pure data types, no
-  parsing logic. Nothing in `app` calls either function yet; that lands
-  with the file input (backlog item 002) and the save/export screen
-  (backlog item 004).
+  parsing logic. Only `loadStage` is called so far (via `input`); `saveStage`
+  is wired up but unused until the save/export screen (backlog item 004).
 - **`scripts`** (`scripts/download-wasm.mjs`) — dev-only tooling, not part
   of the shipped app bundle. Fetches a pinned `stage` release's
   `stage.wasm` + `wasm_exec.js` into `public/wasm/` so contributors don't
@@ -57,20 +79,32 @@ and under the test suite's jsdom environment — the same loading strategy
 `stage-viewer-web`'s own bridge uses (itself mirroring
 `character-viewer-web`'s `.vibe/decisions/002-wasm-bridge-loading-and-result-shape.md`).
 
-## Data flow: loading and saving a stage (once the file input lands)
+## Data flow: loading a stage
 
-1. `loadStage` is called with a stage `.def` file's raw bytes. On first
-   call, the bridge fetches and instantiates `stage.wasm` (memoized —
-   shared with `saveStage`, so later calls to either skip straight to the
-   module call).
-2. The bytes are handed to `OpenKakutouStage.load`, which returns a
-   `{ stage, error }` JSON result — never throws, even on malformed input.
-   `loadStage` parses that into a typed `StageResult`.
-3. Once editing screens exist, the caller mutates its own in-memory
-   `StageData` value from that result.
-4. `saveStage` is called with the *original* `.def` bytes (for the
-   byte-exact-if-unchanged comparison) plus the edited `StageData`. It
-   JSON-serializes the edited value and calls `OpenKakutouStage.save`,
+1. The user picks or drops a folder onto `input`'s view.
+2. `input` gathers every file in it (recursing into subfolders), then
+   picks the `.def` candidate — automatically if there's exactly one,
+   otherwise the view prompts the user to choose among them.
+3. The chosen `.def`'s bytes are read and handed to `wasm.loadStage`,
+   which calls the WebAssembly module's `OpenKakutouStage.load` and parses
+   its `{ stage, error }` JSON result into a typed `StageResult`.
+4. `input` resolves the loaded stage's referenced sprite sheet from the
+   same gathered folder listing (basename match, exact then
+   case-insensitive) and reads its bytes too.
+5. On success, `app` stores the result — file name, parsed stage, original
+   `.def` bytes, and the resolved sprite sheet's name/bytes — in
+   `document`'s store, fully replacing whatever was there before. On
+   failure, `input`'s view shows a specific, named error (which file, and
+   why) instead. No editing screen reads from the store yet; that lands
+   with backlog item 003.
+
+## Data flow: saving a stage (once the save/export screen lands)
+
+1. `saveStage` is called with the *original* `.def` bytes (held in
+   `document`'s store, for the byte-exact-if-unchanged comparison) plus the
+   edited `StageData`.
+2. It JSON-serializes the edited value and calls `OpenKakutouStage.save`,
    which re-parses the original internally — a malformed original is a
-   real error path here, not just `load`'s. The result is `{ ok: true,
-   bytes }` (the serialized `.def` file) or `{ ok: false, error }`.
+   real error path here, not just `load`'s.
+3. The result is `{ ok: true, bytes }` (the serialized `.def` file) or
+   `{ ok: false, error }`.

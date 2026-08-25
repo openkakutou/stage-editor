@@ -107,3 +107,62 @@ Discriminated-union result of `saveStage`: exactly one of `bytes`/`error` is eve
 | success | `ok: true`, `bytes: Uint8Array` |
 | failure | `ok: false`, `error: string` |
 Defined in: `src/wasm/types.ts`
+
+## GatheredFile
+A file gathered from a folder selection or drag-and-drop, plus its path relative to the folder the user picked.
+
+| Field | Type | Notes |
+|---|---|---|
+| file | File | The native browser File object |
+| relativePath | string | Path within the picked folder (from `webkitRelativePath`, or a `FileSystemEntry.fullPath` walk for drag-and-drop) |
+Defined in: `src/input/folder-entries.ts`
+
+## CandidateResolution
+What to do with the files gathered from a folder selection, regarding which one is the stage's `.def`.
+
+| Variant | Fields |
+|---|---|
+| no-files | (none) — nothing was gathered at all |
+| no-candidate | (none) — nothing matched the `.def` heuristic |
+| success | `entry: GatheredFile` — exactly one candidate, auto-resolved |
+| needs-selection | `candidates: GatheredFile[]` — several candidates, caller must ask |
+Defined in: `src/input/stage-file-input.ts`
+
+## SpriteSheetResolution
+The outcome of resolving a stage's referenced sprite sheet against a gathered folder listing, by basename (exact match first, case-insensitive fallback second).
+
+| Variant | Fields |
+|---|---|
+| no-reference | (none) — the stage's `.def` has no sprite sheet key at all |
+| success | `entry: GatheredFile` |
+| not-found | `referencedName: string` — the exact string the `.def` referenced |
+| ambiguous | `referencedName: string`, `candidates: GatheredFile[]` — more than one file shares the resolved name |
+Defined in: `src/input/stage-file-input.ts`
+
+## StageFolderInputResult
+The end-to-end result of loading a stage from a folder: candidate resolution passthrough, plus the stage-load and sprite-sheet-resolution outcomes.
+
+| Variant | Fields |
+|---|---|
+| success | `fileName`, `relativePath`, `stage: StageData`, `defBytes`, `sffFileName`, `sffRelativePath`, `sffBytes` |
+| no-files / no-candidate | (none) |
+| needs-selection | `candidates: GatheredFile[]` |
+| read-error / parse-error | `fileName: string`, `message: string` |
+| sprite-not-found | `fileName: string`, `referencedName: string` |
+| sprite-ambiguous | `fileName: string`, `referencedName: string`, `candidates: GatheredFile[]` |
+| sprite-read-error | `fileName: string`, `sffFileName: string`, `message: string` |
+Defined in: `src/input/stage-file-input.ts`
+
+## StageDocument
+The currently loaded stage, held in memory for later editor screens.
+
+| Field | Type | Notes |
+|---|---|---|
+| fileName | string | The `.def` file's own name |
+| relativePath | string | Its path within the picked folder |
+| stage | StageData | The parsed stage |
+| defBytes | Uint8Array | The original `.def` bytes — needed by `saveStage`'s byte-exact-if-unchanged comparison |
+| sffFileName | string | The resolved sprite sheet's name |
+| sffRelativePath | string | Its path within the picked folder |
+| sffBytes | Uint8Array | The resolved sprite sheet's raw bytes |
+Defined in: `src/document/stage-document-store.ts`
