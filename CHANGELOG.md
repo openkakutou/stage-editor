@@ -7,9 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-26
+
 ### Added
 
 - Users can now load a stage by picking or dragging in the folder that contains its files — the app reads them, automatically finds the referenced background sprite sheet even in a subfolder or under a slightly different letter case, and clearly names which file is missing if it can't be found. The loaded stage is kept ready in memory for the editing screens that come in later updates.
+
+### Fixed
+
+- Fixed the automatic deployment of this app's live site, which had been failing since the previous release.
 
 ## [0.2.0] - 2026-08-25
 
@@ -17,5 +23,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The app now uses the shared OpenKakutou design system for its layout and visual style, and can load and save a stage file (background, camera, and layer data) through the underlying stage library — the on-screen file loading, editing, and save screens themselves come in later updates.
 
-[Unreleased]: https://github.com/openkakutou/stage-editor/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/openkakutou/stage-editor/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/openkakutou/stage-editor/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/openkakutou/stage-editor/releases/tag/v0.2.0
