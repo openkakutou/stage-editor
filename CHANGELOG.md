@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-26
+
 ### Added
 
 - After loading a stage, its name, author, camera bounds, and stage boundaries can now be edited directly, and its background elements/layers can be added, edited, and removed — choosing each element's type, position, layer, tiling, and sprite reference. Assigning a sprite reference that doesn't exist in the loaded sprite sheet is flagged clearly instead of being accepted silently.
@@ -27,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The app now uses the shared OpenKakutou design system for its layout and visual style, and can load and save a stage file (background, camera, and layer data) through the underlying stage library — the on-screen file loading, editing, and save screens themselves come in later updates.
 
-[Unreleased]: https://github.com/openkakutou/stage-editor/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/openkakutou/stage-editor/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/openkakutou/stage-editor/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/openkakutou/stage-editor/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/openkakutou/stage-editor/releases/tag/v0.2.0
