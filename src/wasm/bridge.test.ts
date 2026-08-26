@@ -48,6 +48,14 @@ describe("loadStage", () => {
     expect(result.stage.elements).toHaveLength(2);
   });
 
+  it("maps the stage's name, and reports a missing author as an empty string", async () => {
+    const result = await loadStage(defBytes, testOptions);
+    if (!result.ok) throw new Error("expected ok result");
+
+    expect(result.stage.name).toBe("Training Room");
+    expect(result.stage.author).toBe("");
+  });
+
   it("returns a typed error, not a thrown exception, for malformed .def bytes", async () => {
     const malformed = new Uint8Array(
       new TextEncoder().encode("[BGDef\nspr = x\n"),
@@ -90,8 +98,28 @@ describe("saveStage", () => {
     expect(new TextDecoder().decode(result.bytes)).toContain("zoffset = 999");
   });
 
+  it("reflects an edited name and author in the produced .def bytes", async () => {
+    const loaded = await loadStage(defBytes, testOptions);
+    if (!loaded.ok) throw new Error("expected ok result");
+
+    const edited = {
+      ...loaded.stage,
+      name: "Renamed Room",
+      author: "New Author",
+    };
+    const result = await saveStage(defBytes, edited, testOptions);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok result");
+    const text = new TextDecoder().decode(result.bytes);
+    expect(text).toContain('name = "Renamed Room"');
+    expect(text).toContain('author = "New Author"');
+  });
+
   it("produces output for a brand new stage with no original bytes", async () => {
     const newStage = {
+      name: "",
+      author: "",
       bgDef: {
         spriteFile: "new.sff",
         localCoordWidth: 320,

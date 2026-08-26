@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- After loading a stage, its name, author, camera bounds, and stage boundaries can now be edited directly, and its background elements/layers can be added, edited, and removed — choosing each element's type, position, layer, tiling, and sprite reference. Assigning a sprite reference that doesn't exist in the loaded sprite sheet is flagged clearly instead of being accepted silently.
+
 ## [0.3.0] - 2026-08-26
 
 ### Added

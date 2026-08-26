@@ -74,3 +74,192 @@
 .stage-file-input__reset {
   align-self: flex-start;
 }
+
+/*
+ * Characteristics editor (backlog item 003). Field/label/input shape
+ * mirrors `character-editor`'s own characteristics-editor.ts styling
+ * (same `web-ui-kit` token stopgap for a still-missing generic text-input
+ * component, see .vibe/decisions/003 in that repo). Camera Bounds and
+ * Stage Boundaries are deliberately separate `wuik-panel`s, not sections
+ * in one flat list, so the two never read as one group — see
+ * .vibe/glossary.md ("Camera Bounds"/"Stage Boundaries" — do not confuse).
+ * Error text stays on `--wuik-color-text`, never `--wuik-color-danger`,
+ * matching that same convention.
+ */
+
+.characteristics-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wuik-space-5);
+  padding: var(--wuik-space-4);
+}
+
+.characteristics-editor__panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wuik-space-3);
+  padding: var(--wuik-space-4);
+}
+
+.characteristics-editor__panel h2 {
+  margin: 0;
+  font-size: var(--wuik-font-size-base);
+  font-weight: var(--wuik-font-weight-medium);
+  color: var(--wuik-color-text-secondary);
+}
+
+.characteristics-editor__camera-bounds,
+.characteristics-editor__stage-boundaries {
+  display: grid;
+  grid-template-columns: auto repeat(4, minmax(6rem, 1fr));
+  align-items: end;
+  gap: var(--wuik-space-3);
+}
+
+.characteristics-editor__camera-bounds h2,
+.characteristics-editor__stage-boundaries h2 {
+  grid-column: 1 / -1;
+}
+
+.characteristics-editor__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wuik-space-1);
+}
+
+.characteristics-editor__label {
+  font-size: var(--wuik-font-size-sm);
+  font-weight: var(--wuik-font-weight-medium);
+}
+
+.characteristics-editor__input {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 28rem;
+  padding: var(--wuik-space-2);
+  font-family: var(--wuik-font-family-base);
+  font-size: var(--wuik-font-size-base);
+  color: var(--wuik-color-text);
+  background-color: var(--wuik-color-bg);
+  border: 1px solid var(--wuik-color-border);
+  border-radius: var(--wuik-space-1);
+}
+
+.characteristics-editor__input:focus-visible {
+  outline: 2px solid var(--wuik-color-focus-ring);
+  outline-offset: -2px;
+}
+
+.characteristics-editor__input.is-invalid {
+  border-color: var(--wuik-color-danger);
+}
+
+.characteristics-editor__input.is-invalid:focus-visible {
+  outline-color: var(--wuik-color-danger);
+}
+
+.characteristics-editor__field-error {
+  font-size: var(--wuik-font-size-sm);
+  color: var(--wuik-color-text);
+}
+
+/*
+ * BG element editor (backlog item 003). Row-per-element, collapsed by
+ * default, mirrors `lifebar-editor`'s own `.elements-editor__*` collapsible
+ * shape (toggle/entries), adapted for a form-per-row instead of a flat
+ * key/value entry list, and for add/remove (lifebar's own version only
+ * ever edits pre-existing sections). Error text stays on
+ * `--wuik-color-text`, never `--wuik-color-danger`, matching
+ * `.characteristics-editor__field-error` above.
+ */
+
+.elements-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wuik-space-3);
+  padding: var(--wuik-space-4);
+}
+
+.elements-editor__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wuik-space-2);
+}
+
+.elements-editor__row {
+  border: 1px solid var(--wuik-color-border);
+  border-radius: var(--wuik-space-1);
+}
+
+.elements-editor__toggle {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: var(--wuik-space-2) var(--wuik-space-3);
+  font: inherit;
+  color: var(--wuik-color-text);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.elements-editor__summary {
+  font-size: var(--wuik-font-size-sm);
+}
+
+.elements-editor__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wuik-space-2);
+  padding: 0 var(--wuik-space-3) var(--wuik-space-3);
+}
+
+/* An author `display` rule here would otherwise defeat `[hidden]`'s own
+ * default `display: none` — see lifebar-editor's own identical note. */
+.elements-editor__body[hidden] {
+  display: none;
+}
+
+.elements-editor__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wuik-space-1);
+  font-size: var(--wuik-font-size-sm);
+  font-weight: var(--wuik-font-weight-medium);
+}
+
+.elements-editor__input {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 24rem;
+  padding: var(--wuik-space-2);
+  font-family: var(--wuik-font-family-base);
+  font-size: var(--wuik-font-size-base);
+  font-weight: var(--wuik-font-weight-regular);
+  color: var(--wuik-color-text);
+  background-color: var(--wuik-color-bg);
+  border: 1px solid var(--wuik-color-border);
+  border-radius: var(--wuik-space-1);
+}
+
+.elements-editor__input.is-invalid {
+  border-color: var(--wuik-color-danger);
+}
+
+.elements-editor__field-error {
+  font-size: var(--wuik-font-size-sm);
+  font-weight: var(--wuik-font-weight-regular);
+  color: var(--wuik-color-text);
+}
+
+.elements-editor__remove-area {
+  display: flex;
+  align-items: center;
+  gap: var(--wuik-space-2);
+  padding: 0 var(--wuik-space-3) var(--wuik-space-3);
+}
+
+.elements-editor__remove-confirm-prompt {
+  font-size: var(--wuik-font-size-sm);
+  color: var(--wuik-color-text);
+}

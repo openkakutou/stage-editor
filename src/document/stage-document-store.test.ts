@@ -8,6 +8,8 @@ import {
 
 function emptyStage(spriteFile = "stage0.sff"): StageData {
   return {
+    name: "",
+    author: "",
     bgDef: {
       spriteFile,
       localCoordWidth: 320,

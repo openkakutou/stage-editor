@@ -2,29 +2,32 @@ import "@openkakutou/web-ui-kit/tokens.css";
 import "@openkakutou/web-ui-kit";
 import "./style.css";
 import { setStageDocument } from "./document/stage-document-store.ts";
+import { renderCharacteristicsEditor } from "./editor/characteristics-editor.ts";
+import { renderElementsEditor } from "./editor/elements-editor.ts";
 import { renderStageFileInput } from "./input/stage-file-input-view.ts";
 import type { StageFolderInputOptions } from "./input/stage-file-input.ts";
 import { appVersion } from "./version.ts";
+import type { SffWasmBridgeOptions } from "./wasm/sff-bridge.ts";
+import { loadSpriteSheet } from "./wasm/sff-bridge.ts";
+import type { SpriteGroup } from "./wasm/sff-types.ts";
 
 const APP_TITLE = "Stage Editor";
 
 export interface RenderAppOptions {
   /** Forwarded to the file input's WASM bridge; injectable for testing. */
   bridgeOptions?: StageFolderInputOptions["bridgeOptions"];
+  /** Forwarded to the `sff` WASM bridge (sprite reference validation); injectable for testing. */
+  sffBridgeOptions?: SffWasmBridgeOptions;
 }
 
 /**
  * Builds the app's root frame — a `web-ui-kit` `<wuik-app-shell>` with the
- * app title (plus version) in the toolbar and the stage file input
- * (backlog item 002) as `<main>` content. A successful load is stored in
- * `stage-document-store.ts`, ready for item 003's editing screens — no
- * "ready to edit" affordance is shown here, since none of that exists yet.
+ * app title (plus version) in the toolbar, the stage file input (backlog
+ * item 002), and the characteristics + BG element editors (backlog item
+ * 003) as `<main>` content, appearing automatically once a stage loads.
  * Mirrors `stage-viewer-web`'s own scaffold adoption: no sidebar/tabs yet,
- * default light theme only. No save/dirty-state affordance either — no
- * editing capability exists yet, so a disabled save button or "unsaved
- * changes" indicator here would be a permanently non-functional control,
- * not a useful signal; deferred until real editing UI (items 003+)
- * actually needs it.
+ * default light theme only. No save/dirty-state affordance yet — save is a
+ * separate, not-yet-built item.
  */
 export function renderApp(
   root: HTMLElement,
@@ -45,14 +48,44 @@ export function renderApp(
   shell.appendChild(toolbar);
 
   const main = document.createElement("main");
+  const characteristicsContainer = document.createElement("div");
+  const elementsContainer = document.createElement("div");
+
   renderStageFileInput(main, {
     onLoaded: (result) => {
-      // Always a full replace, no confirmation: nothing is editable yet
-      // in this item, so there is no unsaved state a new load could lose.
       setStageDocument(result);
+      renderCharacteristicsEditor(characteristicsContainer, result.stage);
+
+      // Sprite reference validation needs the sheet's metadata, decoded via
+      // a second, independent WASM module (see
+      // .vibe/decisions/001-sff-wasm-bridged-directly-for-sprite-reference-validation.md).
+      // Render once immediately (spriteGroups: null → every reference shows
+      // as still loading), then again once decoded. A decode failure never
+      // reaches the user as a crash — it's the same failure shape as an
+      // absent sheet as far as this editor is concerned: no verifiable
+      // sprite list, so every reference falls back to unverifiable/invalid
+      // rather than the editor hanging on "loading" forever.
+      const expandedRows = new Set<number>();
+      let spriteGroups: SpriteGroup[] | null = null;
+      const rerenderElements = () => {
+        renderElementsEditor(elementsContainer, result.stage, spriteGroups, {
+          expandedRows,
+        });
+      };
+      rerenderElements();
+
+      loadSpriteSheet(result.sffBytes, options.sffBridgeOptions)
+        .then((sheetResult) => {
+          spriteGroups = sheetResult.ok ? sheetResult.spriteGroups : [];
+        })
+        .catch(() => {
+          spriteGroups = [];
+        })
+        .finally(rerenderElements);
     },
     bridgeOptions: options.bridgeOptions,
   });
+  main.append(characteristicsContainer, elementsContainer);
   shell.appendChild(main);
 
   root.appendChild(shell);

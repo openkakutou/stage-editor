@@ -5,6 +5,8 @@ The full stage graph returned by `loadStage`, and the shape `saveStage` serializ
 
 | Field | Type | Notes |
 |---|---|---|
+| name | string | `[Info]` `name` — empty string when the stage's `.def` doesn't set it |
+| author | string | `[Info]` `author` — empty string when the stage's `.def` doesn't set it |
 | bgDef | BGdef | Stage-level settings |
 | elements | BGElement[] \| null | `null` (not `[]`) when the stage has no BG elements — a nil Go slice marshals to JSON `null` |
 | cameraBounds | CameraBounds | The box the camera's own position is clamped to |
@@ -152,6 +154,35 @@ The end-to-end result of loading a stage from a folder: candidate resolution pas
 | sprite-ambiguous | `fileName: string`, `referencedName: string`, `candidates: GatheredFile[]` |
 | sprite-read-error | `fileName: string`, `sffFileName: string`, `message: string` |
 Defined in: `src/input/stage-file-input.ts`
+
+## Sprite
+One sprite's metadata within a sprite sheet — position, size, palette reference. Never pixel data — this app only needs enough to validate a BG element's sprite reference.
+
+| Field | Type | Notes |
+|---|---|---|
+| group, image | number | Identify the sprite, same shape as `SpriteRef` |
+| width, height | number | Sprite dimensions in pixels |
+| axisX, axisY | number | The sprite's own drawing origin offset |
+| palette | number | Which palette (of the sheet's shared palettes) this sprite uses |
+Defined in: `src/wasm/sff-types.ts`
+
+## SpriteGroup
+All sprites sharing the same group index, as `sff` groups them.
+
+| Field | Type | Notes |
+|---|---|---|
+| index | number | The group's own index |
+| sprites | Sprite[] | Every sprite in this group |
+Defined in: `src/wasm/sff-types.ts`
+
+## SpriteSheetResult
+Discriminated-union result of `loadSpriteSheet`: exactly one of `spriteGroups`/`error` is ever meaningful.
+
+| Variant | Fields |
+|---|---|
+| success | `ok: true`, `spriteGroups: SpriteGroup[]` |
+| failure | `ok: false`, `error: string` |
+Defined in: `src/wasm/sff-bridge.ts`
 
 ## StageDocument
 The currently loaded stage, held in memory for later editor screens.

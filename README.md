@@ -3,12 +3,10 @@
 A read+write editor for [OpenKakutou](https://github.com/openkakutou) (MUGEN/Ikemen GO-compatible) stage (background) files — load an existing stage or start a new one, edit its characteristics and BG elements/layers, and save the result. It reads and writes stage data (`.def` and its referenced sprite sheet) via a WebAssembly module built from the sibling [`stage`](https://github.com/openkakutou/stage) Go library. Separate app from [`stage-viewer-web`](https://github.com/openkakutou/stage-viewer-web), which is read-only.
 
 <!-- vibe:begin:features -->
-This project is in early-stage development. You can already load a stage by picking or dragging in the folder that contains its files — the app reads them, automatically finds the referenced background sprite sheet even in a subfolder or under a slightly different letter case, and clearly names which file is missing if it can't be found. The loaded stage is kept ready for the editing screens below, which are not built yet.
+This project is in early-stage development. You can already load a stage by picking or dragging in the folder that contains its files — the app reads them, automatically finds the referenced background sprite sheet even in a subfolder or under a slightly different letter case, and clearly names which file is missing if it can't be found. Once loaded, you can edit its name, author, camera bounds, and stage boundaries directly, and add, edit, and remove its background elements/layers — choosing each element's type, position, layer, tiling, and sprite reference. A sprite reference that doesn't exist in the loaded sprite sheet is flagged clearly instead of being accepted silently.
 
 Planned:
 
-- A characteristics editor: stage name, author, camera bounds, stage boundaries
-- A BG element/layer editor: add, edit, and remove background elements and layers (parallax parameters, sprite references)
 - Save/export edits back to the stage `.def` format
 - A new stage wizard: create a stage from scratch or from a starter template
 <!-- vibe:end:features -->
@@ -36,6 +34,12 @@ Download a specific version of the `stage` library's WebAssembly build (needed t
 
 ```sh
 npm run wasm:download -- v0.8.0
+```
+
+Download a specific version of the `sff` library's WebAssembly build (needed to validate a background element's sprite reference against the loaded sprite sheet):
+
+```sh
+npm run wasm:download:sff -- v0.3.0
 ```
 <!-- vibe:end:install -->
 

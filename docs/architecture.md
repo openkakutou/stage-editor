@@ -15,21 +15,26 @@ in addition to `load`.
 ```mermaid
 flowchart LR
     app["app\n(src/main.ts)"] --> input["input\n(src/input/)"]
+    app --> editor["editor\n(src/editor/)"]
     input --> wasm["wasm\n(src/wasm/)"]
     input --> document["document\n(src/document/)"]
+    editor --> wasm
     wasm -.->|fetch + WebAssembly.instantiate| module["stage.wasm\n(public/wasm/, gitignored)"]
-    scripts["scripts\n(scripts/download-wasm.mjs)"] -.->|fetches at dev-setup time| module
+    editor -.->|fetch + WebAssembly.instantiate| sffModule["sff.wasm\n(public/wasm/sff/, gitignored)"]
+    scripts["scripts\n(scripts/download-wasm.mjs,\ndownload-sff-wasm.mjs)"] -.->|fetches at dev-setup time| module
+    scripts -.-> sffModule
 
     style module stroke-dasharray: 5 5
+    style sffModule stroke-dasharray: 5 5
 ```
 
 - **`app`** (`src/main.ts`, `src/version.ts`, `src/style.css`) — the entry
   point. Builds the root layout: the org's shared `@openkakutou/web-ui-kit`
-  app shell, a toolbar (app title + version) plus the stage file input as
-  main content. No sidebar/tabs slotted yet. No save/dirty-state affordance
-  either — no editing capability exists yet, so a disabled save button or
-  "unsaved changes" indicator would be a permanently non-functional
-  control, not a useful signal.
+  app shell, a toolbar (app title + version) plus the stage file input, the
+  characteristics editor, and the BG element editor as main content, all
+  appearing automatically once a stage loads. No sidebar/tabs slotted yet.
+  No save/dirty-state affordance either — save is a separate,
+  not-yet-built item.
 - **`input`** (`src/input/`) — the stage folder input (backlog item 002).
   `folder-entries.ts` gathers files from a folder selection or a
   drag-and-drop. `stage-file-input.ts` picks which gathered file is the
@@ -63,10 +68,26 @@ flowchart LR
   nested shapes, plus `StageResult`/`SaveResult`) — pure data types, no
   parsing logic. Only `loadStage` is called so far (via `input`); `saveStage`
   is wired up but unused until the save/export screen (backlog item 004).
-- **`scripts`** (`scripts/download-wasm.mjs`) — dev-only tooling, not part
-  of the shipped app bundle. Fetches a pinned `stage` release's
-  `stage.wasm` + `wasm_exec.js` into `public/wasm/` so contributors don't
-  need a Go toolchain or a sibling `stage` checkout.
+- **`scripts`** (`scripts/download-wasm.mjs`, `download-sff-wasm.mjs`) —
+  dev-only tooling, not part of the shipped app bundle. The first fetches a
+  pinned `stage` release's `stage.wasm` + `wasm_exec.js` into `public/wasm/`;
+  the second, a separate script (not a shared parameterized one — each
+  downloads a different producer repo's release), fetches a pinned `sff`
+  release's own `sff.wasm` + `wasm_exec.js` into `public/wasm/sff/` — a
+  distinct subdirectory, so the two `wasm_exec.js` files (each only
+  guaranteed compatible with the Go toolchain version that built the
+  `.wasm` binary shipped next to it) never collide. Neither needs a Go
+  toolchain or a sibling checkout of either repo.
+- **`editor`** (`src/editor/`) — the two editing screens (backlog item
+  003). `characteristics-editor.ts` edits a loaded stage's name, author,
+  camera bounds, and stage boundaries. `elements-editor.ts` lists the
+  stage's BG elements, one collapsed row each, expandable individually;
+  add, edit, and remove. Both mutate the loaded `StageData` object `app`
+  handed them in place — the same object reference `document`'s store
+  holds, so no re-parse or explicit "save this back to the store" step is
+  needed. `elements-editor.ts` additionally validates a BG element's
+  sprite reference against the loaded sheet's actual sprites, via `wasm`'s
+  second bridge (see "Sprite reference validation" below).
 
 ## WebAssembly dependency
 
@@ -93,10 +114,26 @@ and under the test suite's jsdom environment — the same loading strategy
    case-insensitive) and reads its bytes too.
 5. On success, `app` stores the result — file name, parsed stage, original
    `.def` bytes, and the resolved sprite sheet's name/bytes — in
-   `document`'s store, fully replacing whatever was there before. On
+   `document`'s store, fully replacing whatever was there before, and
+   renders `editor`'s two screens against the loaded `StageData`. On
    failure, `input`'s view shows a specific, named error (which file, and
-   why) instead. No editing screen reads from the store yet; that lands
-   with backlog item 003.
+   why) instead.
+
+## Sprite reference validation
+
+`stage`'s own WASM module (`wasm/bridge.ts`) has no sprite-metadata surface
+at all — only `load`/`save` on the `Stage` data model. To flag a BG
+element's sprite reference that doesn't exist in the loaded sheet,
+`elements-editor.ts` bridges `sff`'s own separate WASM module directly
+(`wasm/sff-bridge.ts`, `OpenKakutouSff.load`) — metadata only, no pixel
+decode, since only enumeration is needed to validate a reference. See
+`.vibe/decisions/001-sff-wasm-bridged-directly-for-sprite-reference-validation.md`
+for why this doesn't wait on `stage`'s own WASM growing that capability.
+Called once per loaded stage, right after `app` stores it — rendered first
+with `spriteGroups: null` (every reference reads as "loading"), then again
+once the sheet's metadata resolves (or, on a decode failure, with an empty
+list — every reference then reads as unverifiable rather than the editor
+hanging on "loading" forever).
 
 ## Data flow: saving a stage (once the save/export screen lands)
 
