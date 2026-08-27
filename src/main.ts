@@ -4,6 +4,7 @@ import "./style.css";
 import { setStageDocument } from "./document/stage-document-store.ts";
 import { renderCharacteristicsEditor } from "./editor/characteristics-editor.ts";
 import { renderElementsEditor } from "./editor/elements-editor.ts";
+import { renderSaveExport } from "./editor/save-export.ts";
 import { renderStageFileInput } from "./input/stage-file-input-view.ts";
 import type { StageFolderInputOptions } from "./input/stage-file-input.ts";
 import { appVersion } from "./version.ts";
@@ -23,11 +24,13 @@ export interface RenderAppOptions {
 /**
  * Builds the app's root frame — a `web-ui-kit` `<wuik-app-shell>` with the
  * app title (plus version) in the toolbar, the stage file input (backlog
- * item 002), and the characteristics + BG element editors (backlog item
- * 003) as `<main>` content, appearing automatically once a stage loads.
- * Mirrors `stage-viewer-web`'s own scaffold adoption: no sidebar/tabs yet,
- * default light theme only. No save/dirty-state affordance yet — save is a
- * separate, not-yet-built item.
+ * item 002), the characteristics + BG element editors (backlog item 003),
+ * and the Save/Export button (backlog item 004) as `<main>` content,
+ * appearing automatically once a stage loads. Mirrors `stage-viewer-web`'s
+ * own scaffold adoption: no sidebar/tabs yet, default light theme only. No
+ * dirty-state indicator yet — Save/Export always re-reads the document
+ * store fresh, so it's correct without one; a "you have unsaved changes"
+ * signal is a separate, not-yet-built concern.
  */
 export function renderApp(
   root: HTMLElement,
@@ -50,11 +53,13 @@ export function renderApp(
   const main = document.createElement("main");
   const characteristicsContainer = document.createElement("div");
   const elementsContainer = document.createElement("div");
+  const saveExportContainer = document.createElement("div");
 
   renderStageFileInput(main, {
     onLoaded: (result) => {
       setStageDocument(result);
       renderCharacteristicsEditor(characteristicsContainer, result.stage);
+      renderSaveExport(saveExportContainer);
 
       // Sprite reference validation needs the sheet's metadata, decoded via
       // a second, independent WASM module (see
@@ -85,7 +90,7 @@ export function renderApp(
     },
     bridgeOptions: options.bridgeOptions,
   });
-  main.append(characteristicsContainer, elementsContainer);
+  main.append(characteristicsContainer, elementsContainer, saveExportContainer);
   shell.appendChild(main);
 
   root.appendChild(shell);

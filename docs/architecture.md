@@ -31,10 +31,11 @@ flowchart LR
 - **`app`** (`src/main.ts`, `src/version.ts`, `src/style.css`) — the entry
   point. Builds the root layout: the org's shared `@openkakutou/web-ui-kit`
   app shell, a toolbar (app title + version) plus the stage file input, the
-  characteristics editor, and the BG element editor as main content, all
-  appearing automatically once a stage loads. No sidebar/tabs slotted yet.
-  No save/dirty-state affordance either — save is a separate,
-  not-yet-built item.
+  characteristics editor, the BG element editor, and the Save/Export
+  button as main content, all appearing automatically once a stage loads.
+  No sidebar/tabs slotted yet. No dirty-state indicator — Save/Export
+  always re-reads the document store fresh at click time, so it's correct
+  without one.
 - **`input`** (`src/input/`) — the stage folder input (backlog item 002).
   `folder-entries.ts` gathers files from a folder selection or a
   drag-and-drop. `stage-file-input.ts` picks which gathered file is the
@@ -66,8 +67,7 @@ flowchart LR
   that `stage-viewer-web`'s read-only bridge doesn't. `types.ts` is the
   TypeScript mirror of the module's JSON contract (`StageData` and its
   nested shapes, plus `StageResult`/`SaveResult`) — pure data types, no
-  parsing logic. Only `loadStage` is called so far (via `input`); `saveStage`
-  is wired up but unused until the save/export screen (backlog item 004).
+  parsing logic.
 - **`scripts`** (`scripts/download-wasm.mjs`, `download-sff-wasm.mjs`) —
   dev-only tooling, not part of the shipped app bundle. The first fetches a
   pinned `stage` release's `stage.wasm` + `wasm_exec.js` into `public/wasm/`;
@@ -88,6 +88,12 @@ flowchart LR
   needed. `elements-editor.ts` additionally validates a BG element's
   sprite reference against the loaded sheet's actual sprites, via `wasm`'s
   second bridge (see "Sprite reference validation" below).
+  `save-export.ts` (backlog item 004) renders the "Save / Export" button:
+  on click, reads the document store fresh, calls `wasm.saveStage`, and —
+  on success — triggers a browser download of the result via a throwaway
+  object URL, ported from `character-editor`'s own
+  `palettes/palette-editor.ts` download helper. A serialization failure
+  shows the WASM bridge's own error text instead of downloading anything.
 
 ## WebAssembly dependency
 
@@ -135,13 +141,25 @@ once the sheet's metadata resolves (or, on a decode failure, with an empty
 list — every reference then reads as unverifiable rather than the editor
 hanging on "loading" forever).
 
-## Data flow: saving a stage (once the save/export screen lands)
+## Data flow: saving a stage
 
-1. `saveStage` is called with the *original* `.def` bytes (held in
-   `document`'s store, for the byte-exact-if-unchanged comparison) plus the
-   edited `StageData`.
-2. It JSON-serializes the edited value and calls `OpenKakutouStage.save`,
-   which re-parses the original internally — a malformed original is a
-   real error path here, not just `load`'s.
-3. The result is `{ ok: true, bytes }` (the serialized `.def` file) or
-   `{ ok: false, error }`.
+1. The user clicks "Save / Export". `save-export.ts` reads the current
+   document fresh from `document`'s store — always whatever is currently
+   there, including any edits made after the button was first rendered.
+2. `wasm.saveStage` is called with the *original* `.def` bytes (held in
+   the document, for the byte-exact-if-unchanged comparison) plus the
+   edited `StageData`. It JSON-serializes the edited value and calls
+   `OpenKakutouStage.save`, which re-parses the original internally — a
+   malformed original is a real error path here, not just `load`'s.
+3. On `{ ok: true, bytes }`, `save-export.ts` triggers a browser download
+   of `bytes` named after the original file. On `{ ok: false, error }`, it
+   shows `error` as the status text instead — never a corrupt or empty
+   download.
+
+Saving an unedited stage produces byte-identical output to the original
+(`stage`'s own `Document` type retains the parsed source verbatim when
+nothing changed). Saving after any edit — even a single field — produces
+a full fresh serialize instead, not a line-level patch: this is `stage`'s
+own deliberate, already-documented trade-off (mirroring `character`'s
+identical contract), not a shortfall of this app's own save path — see
+`.vibe/decisions/002-single-field-edit-produces-a-full-fresh-serialize-not-a-line-patch.md`.

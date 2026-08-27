@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The loaded stage can now be saved and downloaded as a `.def` file. Saving without making any changes downloads a file identical to the one you loaded; saving after an edit downloads the updated stage. A save that can't be completed shows a clear error instead of producing a broken or empty file.
+
 ## [0.4.0] - 2026-08-26
 
 ### Added

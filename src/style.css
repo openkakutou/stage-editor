@@ -263,3 +263,17 @@
   font-size: var(--wuik-font-size-sm);
   color: var(--wuik-color-text);
 }
+
+/*
+ * Save/export (backlog item 004). Error text (a serialization failure
+ * reported by the WASM bridge) stays on `--wuik-color-text`, never
+ * `--wuik-color-danger`, matching every other error-text convention in
+ * this app.
+ */
+
+.save-export__status {
+  min-height: 1.2em;
+  margin: var(--wuik-space-2) var(--wuik-space-4) 0;
+  font-size: var(--wuik-font-size-sm);
+  color: var(--wuik-color-text-secondary);
+}
