@@ -3,6 +3,7 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
   getStageDocument,
+  hasUnsavedStageChanges,
   resetStageDocumentForTests,
 } from "./document/stage-document-store.ts";
 import { renderApp } from "./main.ts";
@@ -146,5 +147,66 @@ describe("renderApp — stage document store integration", () => {
     const current = getStageDocument();
     expect(current?.fileName).toBe("other.def");
     expect(current?.relativePath).toBe("b/other.def");
+  });
+});
+
+function blankStageButton(root: HTMLElement): HTMLElement {
+  const button = root.querySelector<HTMLElement>(
+    '[data-action="new-stage-blank"]',
+  );
+  if (!button) throw new Error("blank stage button not found");
+  return button;
+}
+
+describe("renderApp — New Stage Wizard integration", () => {
+  it("renders the New Stage Wizard alongside the file input from the start", () => {
+    resetStageDocumentForTests();
+    const root = document.createElement("div");
+
+    renderApp(root, "0.1.0");
+
+    expect(blankStageButton(root)).not.toBeNull();
+    expect(root.querySelector('input[type="file"]')).not.toBeNull();
+  });
+
+  it("creating a blank stage stores it and mounts the characteristics editor, with no file ever loaded", () => {
+    resetStageDocumentForTests();
+    const root = document.createElement("div");
+    renderApp(root, "0.1.0");
+
+    blankStageButton(root).click();
+
+    expect(getStageDocument()?.stage.elements).toEqual([]);
+    expect(root.querySelector("#characteristics-editor-name")).not.toBeNull();
+  });
+
+  it("moves focus into the characteristics editor after creating a blank stage", () => {
+    resetStageDocumentForTests();
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+    renderApp(root, "0.1.0");
+
+    blankStageButton(root).click();
+
+    expect(document.activeElement?.id).toBe("characteristics-editor-name");
+    root.remove();
+  });
+
+  it("prompts before discarding an edited stage, and does nothing when declined", () => {
+    resetStageDocumentForTests();
+    const root = document.createElement("div");
+    renderApp(root, "0.1.0");
+    blankStageButton(root).click();
+    const doc = getStageDocument();
+    if (!doc) throw new Error("expected a document after creation");
+    doc.stage.name = "Edited";
+    expect(hasUnsavedStageChanges()).toBe(true);
+
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    blankStageButton(root).click();
+
+    expect(confirmSpy).toHaveBeenCalledOnce();
+    expect(getStageDocument()?.stage.name).toBe("Edited");
+    confirmSpy.mockRestore();
   });
 });

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- You can now start a brand-new stage from scratch, or from a bundled starter template, instead of only loading an existing one. A new stage lands directly in the same editing screens as a loaded one, ready to edit and save. Starting a new stage while the current one has unsaved edits asks for confirmation first, so you never lose changes by accident.
+
 ## [0.5.0] - 2026-08-27
 
 ### Added

@@ -15,10 +15,13 @@ in addition to `load`.
 ```mermaid
 flowchart LR
     app["app\n(src/main.ts)"] --> input["input\n(src/input/)"]
+    app --> wizard["wizard\n(src/wizard/)"]
     app --> editor["editor\n(src/editor/)"]
     input --> wasm["wasm\n(src/wasm/)"]
     input --> document["document\n(src/document/)"]
+    wizard --> document
     editor --> wasm
+    editor --> document
     wasm -.->|fetch + WebAssembly.instantiate| module["stage.wasm\n(public/wasm/, gitignored)"]
     editor -.->|fetch + WebAssembly.instantiate| sffModule["sff.wasm\n(public/wasm/sff/, gitignored)"]
     scripts["scripts\n(scripts/download-wasm.mjs,\ndownload-sff-wasm.mjs)"] -.->|fetches at dev-setup time| module
@@ -30,12 +33,15 @@ flowchart LR
 
 - **`app`** (`src/main.ts`, `src/version.ts`, `src/style.css`) — the entry
   point. Builds the root layout: the org's shared `@openkakutou/web-ui-kit`
-  app shell, a toolbar (app title + version) plus the stage file input, the
-  characteristics editor, the BG element editor, and the Save/Export
-  button as main content, all appearing automatically once a stage loads.
-  No sidebar/tabs slotted yet. No dirty-state indicator — Save/Export
-  always re-reads the document store fresh at click time, so it's correct
-  without one.
+  app shell, a toolbar (app title + version) plus the stage file input,
+  the New Stage Wizard (backlog item 005), the characteristics editor, the
+  BG element editor, and the Save/Export button as main content. A loaded
+  file and a wizard-created stage both funnel into the same
+  `mountDocument` wiring, so the editors appear the same way regardless of
+  entry point; a wizard-driven creation additionally moves focus into the
+  characteristics editor's first field, since the wizard has no second
+  confirm screen of its own to give that positive feedback. No
+  sidebar/tabs slotted yet.
 - **`input`** (`src/input/`) — the stage folder input (backlog item 002).
   `folder-entries.ts` gathers files from a folder selection or a
   drag-and-drop. `stage-file-input.ts` picks which gathered file is the
@@ -53,11 +59,32 @@ flowchart LR
   persistence): the file name, the parsed `StageData`, the original
   `.def` bytes (needed later by `saveStage`'s byte-exact-if-unchanged
   comparison), and the resolved sprite sheet's name/bytes. The single
-  place later editor screens (the characteristics/BG element editor, item
-  003; save/export, item 004) will read from and write back to. Loading a
-  new folder always fully replaces the previous document, with no
-  confirmation — nothing is editable yet, so there is no unsaved state a
-  replace could lose.
+  place editor screens (characteristics, BG element, save/export) read
+  from and write back to. `set` always fully replaces the previous
+  document, with no confirmation of its own — the store only tracks
+  *whether* the loaded stage has unsaved edits
+  (`hasUnsavedStageChanges`, backlog item 005), as a JSON snapshot-diff
+  against whatever state was last known clean (loaded, created, or
+  saved), rather than a boolean an editor's `onChange` callback flips;
+  see "New Stage Wizard" below and
+  `.vibe/decisions/003-new-stage-defaults-and-unsaved-changes-guard.md`
+  for why. Deciding what to do about an unsaved-changes answer (the
+  discard-confirmation prompt) belongs to the caller, not this store.
+- **`wizard`** (`src/wizard/`) — the New Stage Wizard (backlog item 005).
+  `new-stage-defaults.ts` is pure data: `createBlankStage()` builds a
+  minimal valid stage (standard 320×240 coordinate space, sensible
+  non-degenerate camera bounds/boundaries, zero BG elements);
+  `STAGE_TEMPLATES` is a small, fixed list of named starter layouts, each
+  pre-populated with example BG elements whose sprite reference is the
+  established "not yet assigned" sentinel (`{-1, -1}`) rather than a
+  fabricated fake reference, since a from-scratch stage has no real
+  sprite sheet attached yet — a fabricated reference would show as a
+  false "invalid reference" error. `new-stage-wizard.ts` renders the
+  "Blank Stage" + template buttons as their own visually distinct
+  section (own heading) next to the folder input, gated by
+  `hasUnsavedStageChanges`/an injectable `confirmDiscard` (defaulting to
+  the browser's native `confirm`, with a message naming the consequence)
+  before replacing the current document.
 - **`wasm`** (`src/wasm/`) — the bridge to the `stage` WebAssembly module.
   `bridge.ts` loads `wasm_exec.js` and instantiates `stage.wasm`
   client-side (both fetched from `public/wasm/`, gitignored — see
@@ -125,6 +152,25 @@ and under the test suite's jsdom environment — the same loading strategy
    failure, `input`'s view shows a specific, named error (which file, and
    why) instead.
 
+## Data flow: creating a new stage
+
+1. The user clicks "Blank Stage" or a named template button in `wizard`.
+2. `wizard` asks `document`'s store whether the currently loaded stage has
+   unsaved edits. If so, an injectable `confirmDiscard` (the browser's
+   native `confirm`, by default) must return `true` before continuing —
+   declining leaves the current document completely untouched.
+3. `wizard` builds a fresh `StageData` (from `createBlankStage()` or the
+   chosen template's `build()`) and hands it to `app` the same shape a
+   real file load would — a filename, the built stage, and empty
+   `.def`/sprite-sheet byte buffers (there is no original file, and no
+   sprite sheet, to round-trip from or validate against).
+4. `app` stores it in `document` (fully replacing whatever was loaded)
+   and renders `editor`'s screens against it exactly as it would for a
+   loaded stage — with `spriteGroups` set to an empty list immediately
+   rather than fetched via `sff`, since there is no real sheet to decode.
+   Focus moves into the characteristics editor's name field, the wizard's
+   only positive confirmation that creation landed.
+
 ## Sprite reference validation
 
 `stage`'s own WASM module (`wasm/bridge.ts`) has no sprite-metadata surface
@@ -152,9 +198,11 @@ hanging on "loading" forever).
    `OpenKakutouStage.save`, which re-parses the original internally — a
    malformed original is a real error path here, not just `load`'s.
 3. On `{ ok: true, bytes }`, `save-export.ts` triggers a browser download
-   of `bytes` named after the original file. On `{ ok: false, error }`, it
-   shows `error` as the status text instead — never a corrupt or empty
-   download.
+   of `bytes` named after the original file, then calls `document`'s
+   `markStageDocumentSaved()` so `hasUnsavedStageChanges` reports clean
+   again. On `{ ok: false, error }`, it shows `error` as the status text
+   instead — never a corrupt or empty download, and unsaved-changes
+   tracking is left untouched (the save didn't actually happen).
 
 Saving an unedited stage produces byte-identical output to the original
 (`stage`'s own `Document` type retains the parsed source verbatim when

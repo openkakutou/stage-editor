@@ -1,6 +1,7 @@
 import {
   type StageDocument,
   getStageDocument as defaultGetStageDocument,
+  markStageDocumentSaved as defaultMarkStageDocumentSaved,
 } from "../document/stage-document-store.ts";
 // Save/export (backlog item 004): serializes the currently loaded stage
 // (as edited in place by characteristics-editor.ts/elements-editor.ts —
@@ -50,6 +51,8 @@ export interface SaveExportOptions {
   bridgeOptions?: WasmBridgeOptions;
   /** Triggers the browser download. Defaults to the real object-URL download; injectable for testing. */
   triggerDownload?: (bytes: Uint8Array, fileName: string) => void;
+  /** Clears unsaved-changes tracking after a successful save. Defaults to the real document store; injectable for testing. */
+  markStageDocumentSaved?: () => void;
 }
 
 /**
@@ -69,6 +72,8 @@ export function renderSaveExport(
   const getStageDocument = options.getStageDocument ?? defaultGetStageDocument;
   const saveStageFn = options.saveStage ?? defaultSaveStage;
   const triggerDownload = options.triggerDownload ?? defaultTriggerDownload;
+  const markStageDocumentSaved =
+    options.markStageDocumentSaved ?? defaultMarkStageDocumentSaved;
 
   const button = document.createElement("wuik-button");
   button.dataset.action = "save-export";
@@ -90,6 +95,7 @@ export function renderSaveExport(
           return;
         }
         triggerDownload(result.bytes, doc.fileName);
+        markStageDocumentSaved();
         status.textContent = `Saved ${doc.fileName}.`;
       },
     );

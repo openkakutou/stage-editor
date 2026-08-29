@@ -197,3 +197,15 @@ The currently loaded stage, held in memory for later editor screens.
 | sffRelativePath | string | Its path within the picked folder |
 | sffBytes | Uint8Array | The resolved sprite sheet's raw bytes |
 Defined in: `src/document/stage-document-store.ts`
+
+For a wizard-created stage (backlog item 005), `fileName`/`relativePath` are a sensible default (`"stage.def"`), `defBytes`/`sffFileName`/`sffRelativePath`/`sffBytes` are all empty — there is no original file or sprite sheet to round-trip from or validate against.
+
+## StageTemplate
+A named starter layout the New Stage Wizard can build from.
+
+| Field | Type | Notes |
+|---|---|---|
+| id | string | Unique, stable identifier |
+| label | string | Displayed on its button |
+| build | () => StageData | Builds a fresh, independently-mutable stage every call |
+Defined in: `src/wizard/new-stage-defaults.ts`

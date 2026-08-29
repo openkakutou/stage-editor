@@ -97,6 +97,54 @@ describe("renderSaveExport", () => {
     );
   });
 
+  it("marks the document as saved (clearing unsaved-changes tracking) on a successful save", async () => {
+    const root = document.createElement("div");
+    const saveStage = vi
+      .fn()
+      .mockResolvedValue({ ok: true, bytes: new Uint8Array() } as SaveResult);
+    const markStageDocumentSaved = vi.fn();
+
+    renderSaveExport(root, {
+      getStageDocument: () => document_(),
+      saveStage,
+      triggerDownload: vi.fn(),
+      markStageDocumentSaved,
+    });
+
+    root
+      .querySelector<HTMLElement>('[data-action="save-export"]')
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await vi.waitFor(() => {
+      expect(markStageDocumentSaved).toHaveBeenCalled();
+    });
+  });
+
+  it("does not mark the document as saved when the save fails", async () => {
+    const root = document.createElement("div");
+    const saveStage = vi
+      .fn()
+      .mockResolvedValue({ ok: false, error: "bad stage" } as SaveResult);
+    const markStageDocumentSaved = vi.fn();
+
+    renderSaveExport(root, {
+      getStageDocument: () => document_(),
+      saveStage,
+      triggerDownload: vi.fn(),
+      markStageDocumentSaved,
+    });
+
+    root
+      .querySelector<HTMLElement>('[data-action="save-export"]')
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await vi.waitFor(() => {
+      expect(root.querySelector(".save-export__status")?.textContent).toBe(
+        "bad stage",
+      );
+    });
+
+    expect(markStageDocumentSaved).not.toHaveBeenCalled();
+  });
+
   it("shows a clear error state and never triggers a download when the WASM bridge reports a serialization failure", async () => {
     const root = document.createElement("div");
     const saveStage = vi.fn().mockResolvedValue({

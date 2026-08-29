@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it } from "vitest";
 import type { StageData } from "../wasm/types.ts";
 import {
   getStageDocument,
+  hasUnsavedStageChanges,
+  markStageDocumentSaved,
   resetStageDocumentForTests,
   setStageDocument,
 } from "./stage-document-store.ts";
@@ -103,5 +105,63 @@ describe("resetStageDocumentForTests", () => {
     resetStageDocumentForTests();
 
     expect(getStageDocument()).toBeNull();
+  });
+});
+
+describe("hasUnsavedStageChanges", () => {
+  it("is false when nothing is loaded", () => {
+    expect(hasUnsavedStageChanges()).toBe(false);
+  });
+
+  it("is false right after loading a document, before any edit", () => {
+    setStageDocument(loaded("stage.def"));
+
+    expect(hasUnsavedStageChanges()).toBe(false);
+  });
+
+  it("becomes true once the loaded stage object is mutated in place", () => {
+    setStageDocument(loaded("stage.def"));
+    const doc = getStageDocument();
+    if (!doc) throw new Error("expected a loaded document");
+
+    doc.stage.name = "Edited Name";
+
+    expect(hasUnsavedStageChanges()).toBe(true);
+  });
+
+  it("is false again once the edited value is reverted back to its original", () => {
+    setStageDocument(loaded("stage.def"));
+    const doc = getStageDocument();
+    if (!doc) throw new Error("expected a loaded document");
+    const originalName = doc.stage.name;
+
+    doc.stage.name = "Edited Name";
+    expect(hasUnsavedStageChanges()).toBe(true);
+    doc.stage.name = originalName;
+
+    expect(hasUnsavedStageChanges()).toBe(false);
+  });
+
+  it("resets to false after markStageDocumentSaved, even though the same edited object is still loaded", () => {
+    setStageDocument(loaded("stage.def"));
+    const doc = getStageDocument();
+    if (!doc) throw new Error("expected a loaded document");
+    doc.stage.name = "Edited Name";
+    expect(hasUnsavedStageChanges()).toBe(true);
+
+    markStageDocumentSaved();
+
+    expect(hasUnsavedStageChanges()).toBe(false);
+  });
+
+  it("resets to false once a brand new document replaces the edited one", () => {
+    setStageDocument(loaded("first.def"));
+    const doc = getStageDocument();
+    if (!doc) throw new Error("expected a loaded document");
+    doc.stage.name = "Edited Name";
+
+    setStageDocument(loaded("second.def"));
+
+    expect(hasUnsavedStageChanges()).toBe(false);
   });
 });
