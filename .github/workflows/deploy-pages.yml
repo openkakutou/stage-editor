@@ -40,7 +40,7 @@ jobs:
       # — see this repo's own CLAUDE.md ("WASM dependency on stage") for
       # where that pin lives. Mirrors character-viewer-web's equivalent step.
       - name: Download stage WASM release
-        run: npm run wasm:download -- v0.11.0
+        run: npm run wasm:download -- v0.11.1
 
       # Separate WASM module, separate output subdirectory
       # (public/wasm/sff/) — needed to validate a BG element's sprite
@@ -48,7 +48,7 @@ jobs:
       # the stage release above; bumped as a follow-up of sff's own
       # /vibe:release. See .vibe/decisions/001-sff-wasm-bridged-directly-for-sprite-reference-validation.md.
       - name: Download sff WASM release
-        run: npm run wasm:download:sff -- v0.3.0
+        run: npm run wasm:download:sff -- v0.3.1
 
       - name: Test
         run: npm test
