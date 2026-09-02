@@ -23,6 +23,20 @@ Where characters may move within a stage: an x-axis range always, plus a z-axis 
 **Do not confuse with:** Camera Bounds.
 _Sources: `src/wasm/types.ts`_
 
+## 3D Model
+The glTF model file an Ikemen GO 3D model-based stage references, plus its placement (offset), scale, and lighting (an `.hdr` environment file and its intensity). Assigned, replaced, or removed as a file; a stage with no 3D Model behaves exactly like a 2D-only stage.
+**Do not confuse with:** BG Element, which is 2D-only and has no 3D placement of its own.
+_Sources: `src/wasm/types.ts`, `src/editor/model-editor.ts`_
+
+## Perspective Scaling
+How a character's on-screen size and vertical offset change with their depth (Z) position, on a 3D model-based stage — a `topZ`/`bottomZ` depth range mapped to a `topScale`/`bottomScale` size range, plus how depth itself offsets the on-screen Y position.
+_Sources: `src/wasm/types.ts`, `src/editor/model-editor.ts`_
+
+## Player Start Depth
+Each player's starting depth (Z) position on a 3D model-based stage, one value per player slot (1 through 8) — distinct from Stage Boundaries, which clamps depth *movement* rather than setting where a player starts.
+**Do not confuse with:** Stage Boundaries.
+_Sources: `src/wasm/types.ts`, `src/editor/model-editor.ts`_
+
 ## Sprite Sheet
 The image file (`.sff`) a stage references for the sprites its BG Elements draw from. A stage's own `.def` only ever stores a path *reference* to its sprite sheet — the actual file is a separate one, resolved from the same folder the `.def` came from.
 _Sources: `src/wasm/types.ts`, `src/input/stage-file-input.ts`_

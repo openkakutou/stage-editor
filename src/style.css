@@ -265,6 +265,137 @@
 }
 
 /*
+ * 3D model editor (backlog item 006). Field/label/input shape reuses the
+ * `.characteristics-editor__*` stopgap convention verbatim (same still-
+ * missing generic text-input component gap). Model Placement and 3D
+ * Lighting get their own panels, separate from the always-visible Camera/
+ * Scaling/Player Start Depth panels, so a user isn't left wondering why some
+ * 3D fields work with no model assigned and others don't (see
+ * .vibe/decisions/004, point 3). Error/hint/reference text stays on
+ * `--wuik-color-text`/`--wuik-color-text-secondary`, never
+ * `--wuik-color-danger`, matching every other non-error status text
+ * convention in this app — the re-select notice states current capability,
+ * not a problem.
+ */
+
+.model-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wuik-space-5);
+  padding: var(--wuik-space-4);
+}
+
+.model-editor__panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wuik-space-3);
+  padding: var(--wuik-space-4);
+}
+
+.model-editor__panel h2 {
+  margin: 0;
+  font-size: var(--wuik-font-size-base);
+  font-weight: var(--wuik-font-weight-medium);
+  color: var(--wuik-color-text-secondary);
+}
+
+.model-editor__asset-field {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--wuik-space-2);
+}
+
+.model-editor__asset-reference {
+  margin: 0;
+  font-size: var(--wuik-font-size-sm);
+  color: var(--wuik-color-text-secondary);
+}
+
+.model-editor__drop-zone {
+  width: 100%;
+}
+
+.model-editor__hint {
+  margin: 0;
+  font-size: var(--wuik-font-size-sm);
+  color: var(--wuik-color-text-secondary);
+}
+
+.model-editor__remove-area {
+  display: flex;
+  align-items: center;
+  gap: var(--wuik-space-2);
+}
+
+.model-editor__remove-confirm-prompt {
+  font-size: var(--wuik-font-size-sm);
+  color: var(--wuik-color-text);
+}
+
+.model-editor__field-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: var(--wuik-space-3);
+}
+
+.model-editor__field-grid--players {
+  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+}
+
+.model-editor__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wuik-space-1);
+}
+
+.model-editor__label {
+  font-size: var(--wuik-font-size-sm);
+  font-weight: var(--wuik-font-weight-medium);
+}
+
+.model-editor__input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: var(--wuik-space-2);
+  font-family: var(--wuik-font-family-base);
+  font-size: var(--wuik-font-size-base);
+  color: var(--wuik-color-text);
+  background-color: var(--wuik-color-bg);
+  border: 1px solid var(--wuik-color-border);
+  border-radius: var(--wuik-space-1);
+}
+
+.model-editor__input:focus-visible {
+  outline: 2px solid var(--wuik-color-focus-ring);
+  outline-offset: -2px;
+}
+
+.model-editor__input.is-invalid {
+  border-color: var(--wuik-color-danger);
+}
+
+.model-editor__input.is-invalid:focus-visible {
+  outline-color: var(--wuik-color-danger);
+}
+
+.model-editor__field-error {
+  font-size: var(--wuik-font-size-sm);
+  color: var(--wuik-color-text);
+}
+
+.model-editor__preview {
+  min-height: 20rem;
+  aspect-ratio: 16 / 9;
+}
+
+.model-editor__preview wuik-viewport-3d {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/*
  * Save/export (backlog item 004). Error text (a serialization failure
  * reported by the WASM bridge) stays on `--wuik-color-text`, never
  * `--wuik-color-danger`, matching every other error-text convention in

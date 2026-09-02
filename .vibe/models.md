@@ -92,6 +92,43 @@ Each player's starting depth (Z) position (Ikemen GO extension).
 | p1..p8 | number | Starting Z position for players 1 through 8 |
 Defined in: `src/wasm/types.ts`
 
+## CameraParams
+The 3D preview's resolved camera projection — `bgDef`'s own `fov`/`near`/`far`, with sane defaults substituted for a degenerate (≤ 0) declared value.
+
+| Field | Type | Notes |
+|---|---|---|
+| fov | number | Falls back to 45 when `bgDef.fov` is ≤ 0 |
+| near | number | Falls back to 0.1 when `bgDef.near` is ≤ 0 |
+| far | number | Falls back to 10000 when not greater than the *resolved* `near` |
+Defined in: `src/editor/model-camera.ts`
+
+## ModelTransform
+The 3D preview's resolved model placement — `Model`'s offset/scale fields as plain tuples.
+
+| Field | Type | Notes |
+|---|---|---|
+| position | readonly [number, number, number] | `[offsetX, offsetY, offsetZ]` |
+| scale | readonly [number, number, number] | `[scaleX, scaleY, scaleZ]` |
+Defined in: `src/editor/model-camera.ts`
+
+## ModelPreviewInput
+The bytes needed to mount the live 3D preview — passed as `null` instead of this type when no model is currently assigned.
+
+| Field | Type | Notes |
+|---|---|---|
+| modelBytes | Uint8Array | The assigned glTF model's raw bytes |
+| environmentBytes | Uint8Array \| null | The assigned `.hdr` lighting file's raw bytes, if any |
+Defined in: `src/editor/model-preview.ts`
+
+## ModelPreviewHandle
+Returned by `renderModelPreview` so a later field commit can push into the already-mounted preview without tearing anything down (see `.vibe/decisions/004`). Both methods are safe no-ops before the model has finished loading or after the preview has been torn down.
+
+| Field | Type | Notes |
+|---|---|---|
+| updateTransform | (transform: ModelTransform) => void | Mutates the already-loaded model's position/scale and requests a re-render |
+| updateCamera | (cameraParams: CameraParams) => void | Mutates the already-created camera's near/far/fov and requests a re-render |
+Defined in: `src/editor/model-preview.ts`
+
 ## StageResult
 Discriminated-union result of `loadStage`: exactly one of `stage`/`error` is ever meaningful.
 

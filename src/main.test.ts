@@ -210,3 +210,16 @@ describe("renderApp — New Stage Wizard integration", () => {
     confirmSpy.mockRestore();
   });
 });
+
+describe("renderApp — 3D model editor integration", () => {
+  it("mounts the 3D model editor's always-visible fields once a stage is loaded", () => {
+    resetStageDocumentForTests();
+    const root = document.createElement("div");
+    renderApp(root, "0.1.0");
+
+    blankStageButton(root).click();
+
+    expect(root.querySelector('[data-field="bgDef.near"]')).not.toBeNull();
+    expect(root.querySelector('[data-field="playerStartZ.p1"]')).not.toBeNull();
+  });
+});

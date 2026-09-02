@@ -24,11 +24,13 @@ flowchart LR
     editor --> document
     wasm -.->|fetch + WebAssembly.instantiate| module["stage.wasm\n(public/wasm/, gitignored)"]
     editor -.->|fetch + WebAssembly.instantiate| sffModule["sff.wasm\n(public/wasm/sff/, gitignored)"]
+    editor -.->|dynamic import, only once a 3D\nmodel is actually assigned| three["three (npm)"]
     scripts["scripts\n(scripts/download-wasm.mjs,\ndownload-sff-wasm.mjs)"] -.->|fetches at dev-setup time| module
     scripts -.-> sffModule
 
     style module stroke-dasharray: 5 5
     style sffModule stroke-dasharray: 5 5
+    style three stroke-dasharray: 5 5
 ```
 
 - **`app`** (`src/main.ts`, `src/version.ts`, `src/style.css`) — the entry
@@ -105,22 +107,47 @@ flowchart LR
   guaranteed compatible with the Go toolchain version that built the
   `.wasm` binary shipped next to it) never collide. Neither needs a Go
   toolchain or a sibling checkout of either repo.
-- **`editor`** (`src/editor/`) — the two editing screens (backlog item
-  003). `characteristics-editor.ts` edits a loaded stage's name, author,
-  camera bounds, and stage boundaries. `elements-editor.ts` lists the
+- **`editor`** (`src/editor/`) — the editing screens. `characteristics-editor.ts`
+  (backlog item 003) edits a loaded stage's name, author, camera bounds,
+  and stage boundaries. `elements-editor.ts` (backlog item 003) lists the
   stage's BG elements, one collapsed row each, expandable individually;
-  add, edit, and remove. Both mutate the loaded `StageData` object `app`
-  handed them in place — the same object reference `document`'s store
-  holds, so no re-parse or explicit "save this back to the store" step is
-  needed. `elements-editor.ts` additionally validates a BG element's
-  sprite reference against the loaded sheet's actual sprites, via `wasm`'s
-  second bridge (see "Sprite reference validation" below).
+  add, edit, and remove. `model-editor.ts` (backlog item 006) edits a
+  stage's Ikemen GO 3D model settings: assigning/removing a 3D model and
+  `.hdr` lighting file (each via a `<wuik-file-drop-zone>`, with an inline
+  confirm step before actually removing one), the model's placement/scale
+  and lighting strength (shown only once a model is assigned this
+  session), the 3D camera, `[Scaling]`, and each player's starting depth
+  (always editable, independent of whether a model is assigned). All three
+  mutate the loaded `StageData` object `app` handed them in place — the
+  same object reference `document`'s store holds, so no re-parse or
+  explicit "save this back to the store" step is needed.
+  `elements-editor.ts` additionally validates a BG element's sprite
+  reference against the loaded sheet's actual sprites, via `wasm`'s second
+  bridge (see "Sprite reference validation" below).
   `save-export.ts` (backlog item 004) renders the "Save / Export" button:
   on click, reads the document store fresh, calls `wasm.saveStage`, and —
   on success — triggers a browser download of the result via a throwaway
   object URL, ported from `character-editor`'s own
   `palettes/palette-editor.ts` download helper. A serialization failure
   shows the WASM bridge's own error text instead of downloading anything.
+
+## 3D model preview (backlog item 006)
+
+`model-editor.ts` mounts a live 3D preview (`model-preview.ts`,
+`model-camera.ts`) next to the model settings fields, ported and adapted
+from the read-only `stage-viewer-web`'s own `viewer/model-preview.ts` (see
+that repo's `.vibe/decisions/005`) — the same `three` + `<wuik-viewport-3d>`
+approach, `three` dynamically imported only once a model is actually
+assigned so a 2D-only editing session never pays its cost. Unlike the
+read-only viewer, assigning/replacing/removing the model or `.hdr` file is
+the only thing that tears down and reloads the renderer/scene; a committed
+Offset/Scale/Camera Near/Far/fov edit instead mutates the already-loaded
+three.js scene in place through a returned update handle, so the live
+preview never flashes or reloads on a plain field edit — see
+`.vibe/decisions/004-3d-model-editor-incremental-preview-and-reselect-per-session.md`
+for the full reasoning, including why the model/`.hdr` file must be
+re-selected each editing session (this app doesn't yet thread the
+originally loaded folder's file listing through to the editor screens).
 
 ## WebAssembly dependency
 

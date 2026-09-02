@@ -5,6 +5,7 @@ import type { StageDocument } from "./document/stage-document-store.ts";
 import { setStageDocument } from "./document/stage-document-store.ts";
 import { renderCharacteristicsEditor } from "./editor/characteristics-editor.ts";
 import { renderElementsEditor } from "./editor/elements-editor.ts";
+import { renderModelEditor } from "./editor/model-editor.ts";
 import { renderSaveExport } from "./editor/save-export.ts";
 import { renderStageFileInput } from "./input/stage-file-input-view.ts";
 import type { StageFolderInputOptions } from "./input/stage-file-input.ts";
@@ -28,8 +29,9 @@ export interface RenderAppOptions {
  * app title (plus version) in the toolbar, the stage file input (backlog
  * item 002), the New Stage Wizard (backlog item 005) as an alternative
  * entry point, the characteristics + BG element editors (backlog item
- * 003), and the Save/Export button (backlog item 004) as `<main>` content,
- * appearing automatically once a stage loads or is created. Mirrors
+ * 003), the 3D model And stage settings editor (backlog item 006), and the
+ * Save/Export button (backlog item 004) as `<main>` content, appearing
+ * automatically once a stage loads or is created. Mirrors
  * `stage-viewer-web`'s own scaffold adoption: no sidebar/tabs yet, default
  * light theme only.
  */
@@ -55,6 +57,7 @@ export function renderApp(
   const newStageWizardContainer = document.createElement("div");
   const characteristicsContainer = document.createElement("div");
   const elementsContainer = document.createElement("div");
+  const modelEditorContainer = document.createElement("div");
   const saveExportContainer = document.createElement("div");
 
   /**
@@ -76,6 +79,7 @@ export function renderApp(
   ): void {
     setStageDocument(doc);
     renderCharacteristicsEditor(characteristicsContainer, doc.stage);
+    renderModelEditor(modelEditorContainer, doc.stage);
     renderSaveExport(saveExportContainer);
 
     // Sprite reference validation needs the sheet's metadata, decoded via
@@ -124,6 +128,7 @@ export function renderApp(
     newStageWizardContainer,
     characteristicsContainer,
     elementsContainer,
+    modelEditorContainer,
     saveExportContainer,
   );
   shell.appendChild(main);

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- A loaded stage's Ikemen GO 3D model settings can now be edited: assign or remove a 3D model file and its lighting file, edit the model's placement/scale and lighting strength, the 3D camera, perspective scaling, and each player's starting depth — with a live 3D preview that updates as the placement or camera fields are edited. The camera, scaling, and player-depth fields are always editable; the model's own placement fields appear once a model file is assigned. Assigning a model or lighting file whose data can't be rendered (an unsupported browser, or a file that fails to load) shows a clear message instead of a blank or broken preview.
+
 ## [0.6.0] - 2026-08-30
 
 ### Added
