@@ -1,5 +1,5 @@
 ---
-status: todo
+status: done
 depends_on: [003]
 ---
 # 3D Model-Based BG Element And Stage Settings Editor
