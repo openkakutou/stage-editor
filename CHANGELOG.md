@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-09-03
+
 ### Added
 
 - Users can now select several BG elements at once — click a checkbox, or Shift-click/Shift-Space a second one to select every element in between — and apply a shared position offset or sprite reassignment to all of them in a single action. Selected elements are clearly highlighted, and each batch action shows exactly which elements it will affect and stays disabled until it has a real value to apply.
@@ -51,7 +53,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The app now uses the shared OpenKakutou design system for its layout and visual style, and can load and save a stage file (background, camera, and layer data) through the underlying stage library — the on-screen file loading, editing, and save screens themselves come in later updates.
 
-[Unreleased]: https://github.com/openkakutou/stage-editor/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/openkakutou/stage-editor/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/openkakutou/stage-editor/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/openkakutou/stage-editor/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/openkakutou/stage-editor/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/openkakutou/stage-editor/compare/v0.4.0...v0.5.0
