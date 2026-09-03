@@ -123,7 +123,9 @@ flowchart LR
   explicit "save this back to the store" step is needed.
   `elements-editor.ts` additionally validates a BG element's sprite
   reference against the loaded sheet's actual sprites, via `wasm`'s second
-  bridge (see "Sprite reference validation" below).
+  bridge (see "Sprite reference validation" below). Backlog item 007 adds
+  multi-select batch editing on top of the same row list — see "Batch
+  multi-select editing" below.
   `save-export.ts` (backlog item 004) renders the "Save / Export" button:
   on click, reads the document store fresh, calls `wasm.saveStage`, and —
   on success — triggers a browser download of the result via a throwaway
@@ -213,6 +215,52 @@ with `spriteGroups: null` (every reference reads as "loading"), then again
 once the sheet's metadata resolves (or, on a decode failure, with an empty
 list — every reference then reads as unverifiable rather than the editor
 hanging on "loading" forever).
+
+## Batch multi-select editing (backlog item 007)
+
+Each BG element row gets a checkbox. Selection is tracked by element
+object reference (`Set<BGElement>`), not array index — deleting a row
+never needs to reindex the set, since nothing depends on an index staying
+valid across the array's own mutations. See
+`.vibe/decisions/005-bg-element-batch-selection-model-and-scope.md` for
+the full reasoning, including why sprite reassignment shipped over a
+batch reorder for the acceptance criteria's "layer-order shift or sprite
+reassignment" bullet.
+
+- Clicking a checkbox toggles just that row. Shift-clicking (or
+  Shift+Space) a second checkbox selects every row in between, anchored
+  at the last individually-clicked row — the same convention as a file
+  manager.
+- Toggling selection updates only the affected rows' own DOM (a `Map<BGElement,
+  {row, checkbox}>` built once per render) rather than rebuilding the
+  whole list — this matters at the "hundreds of BG elements" scale the
+  feature exists for. Applying a batch action does trigger a full
+  `rerender()`, since it can change many rows' displayed values at once.
+- A batch toolbar (`renderBatchToolbar`, `elements-editor.ts`) renders at
+  the top of the panel only once the selection is non-empty — nothing
+  sticky, since the row list has no internal scroll container of its own
+  yet for that to anchor against. It names the affected elements, and
+  each Apply action (`bg-element-batch-edit.ts`'s pure
+  `applyPositionOffset`/`applySpriteReassignment`) stays disabled until it
+  has a real value to apply (a non-zero offset, or an actually-chosen
+  sprite) — there is no undo in this app yet, so a batch action's scope
+  must be self-evident before it commits.
+- **Checkbox activation quirk (real-browser-only, not jsdom-testable):**
+  calling `preventDefault()` on a checkbox's `click` event — whether
+  triggered by a mouse click or a Space keypress — reverts `.checked`
+  back to its pre-activation value once the event finishes ("canceled
+  activation steps" in the HTML spec), regardless of what JS sets it to
+  during the event. Neither selection path calls `preventDefault` on the
+  checkbox `click` event for this reason: a plain click/Space reads the
+  checkbox's own already-toggled value back (`handleSelectSingle`); a
+  Shift-extended range deterministically sets every affected row
+  (including the one actually clicked) to `checked = true` itself
+  (`handleSelectRange`), which persists correctly precisely because
+  nothing cancels the event. Shift+Space is instead intercepted at
+  `keydown` (preventing the synthetic click from ever being generated at
+  all, sidestepping the same quirk from a different angle) — a plain
+  Space's synthetic click isn't reliably guaranteed to carry the Shift
+  modifier the way a real mouse Shift+click does.
 
 ## Data flow: saving a stage
 

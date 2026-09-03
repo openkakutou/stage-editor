@@ -237,6 +237,20 @@ Defined in: `src/document/stage-document-store.ts`
 
 For a wizard-created stage (backlog item 005), `fileName`/`relativePath` are a sensible default (`"stage.def"`), `defBytes`/`sffFileName`/`sffRelativePath`/`sffBytes` are all empty — there is no original file or sprite sheet to round-trip from or validate against.
 
+## BatchToolbarOptions
+The batch multi-select editing toolbar's own render input (backlog item 007) — internal to `elements-editor.ts`, not exported.
+
+| Field | Type | Notes |
+|---|---|---|
+| elements | BGElement[] | The current, live array — used to order the affected-names list and to resolve indices |
+| spriteGroups | SpriteGroup[] \| null | Populates the batch sprite-reassignment `<select>` |
+| selectedElements | ReadonlySet\<BGElement\> | Which elements are affected |
+| onClearSelection | () => void | |
+| onApplyOffset | (deltaX: number, deltaY: number) => void | |
+| onApplySprite | (sprite: SpriteRef) => void | |
+
+Defined in: `src/editor/elements-editor.ts`
+
 ## StageTemplate
 A named starter layout the New Stage Wizard can build from.
 

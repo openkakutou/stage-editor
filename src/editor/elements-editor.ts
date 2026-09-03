@@ -36,6 +36,20 @@
 // moved on) updates just that element and its own row's summary text in
 // place — rebuilding the whole list on every blur would risk interfering
 // with the browser's own focus-move sequencing mid-Tab.
+//
+// Batch multi-select editing (backlog item 007): each row gets a checkbox,
+// selected by object reference (`ElementsEditorOptions.selectedElements`,
+// not index — see that field's own doc comment and
+// .vibe/decisions/005-bg-element-batch-selection-model-and-scope.md). A
+// batch toolbar (`renderBatchToolbar`, below) appears only once the
+// selection is non-empty, showing which elements are affected and letting
+// the user apply a shared position offset or sprite reassignment to all of
+// them at once via `bg-element-batch-edit.ts`'s pure functions. Toggling
+// selection updates just the affected rows' own visual state (never a full
+// rebuild — this matters at the "hundreds of BG elements" scale the
+// feature exists for); applying a batch action does trigger a full
+// `rerender()`, same as any other structural change, since it can touch
+// many rows' displayed values at once.
 import type { Sprite, SpriteGroup } from "../wasm/sff-types.ts";
 import type {
   BGElement,
@@ -43,6 +57,10 @@ import type {
   SpriteRef,
   StageData,
 } from "../wasm/types.ts";
+import {
+  applyPositionOffset,
+  applySpriteReassignment,
+} from "./bg-element-batch-edit.ts";
 
 export interface ElementsEditorOptions {
   /**
@@ -52,7 +70,17 @@ export interface ElementsEditorOptions {
    * collapsed).
    */
   expandedRows?: Set<number>;
-  /** Called after any committed edit — add, remove, or a field change. */
+  /**
+   * Which elements are selected for batch editing (backlog item 007),
+   * tracked by object reference rather than index — deleting a row from
+   * `stage.elements` never needs to reindex this set, since nothing here
+   * depends on an index staying valid across the array's own mutations.
+   * The caller should pass the same Set instance across re-renders, same
+   * convention as `expandedRows`. See
+   * `.vibe/decisions/005-bg-element-batch-selection-model-and-scope.md`.
+   */
+  selectedElements?: Set<BGElement>;
+  /** Called after any committed edit — add, remove, a field change, or a batch apply. */
   onChange?: () => void;
 }
 
@@ -82,6 +110,14 @@ function blankElement(): BGElement {
 // separate stable-id bookkeeping. Module-level (not per-call) so it
 // persists across the full-list rebuilds a structural change triggers.
 const touchedElements = new WeakSet<BGElement>();
+
+// The last row individually clicked/selected (not via a Shift-extended
+// range), the anchor a later Shift+click/Shift+Space range-select measures
+// from — same file-manager convention as Explorer/Finder. Module-level for
+// the same reason as `touchedElements` above: it must survive this file's
+// own full-list re-renders. `null` once nothing has ever been individually
+// clicked, or after the anchor row itself was removed.
+let lastClickedElement: BGElement | null = null;
 
 type SpriteRefStatus =
   | { kind: "unset" }
@@ -119,6 +155,7 @@ export function renderElementsEditor(
   const loadedStage = stage;
 
   const expandedRows = options.expandedRows ?? new Set<number>();
+  const selectedElements = options.selectedElements ?? new Set<BGElement>();
   const onChange = options.onChange ?? (() => {});
 
   const panel = document.createElement("wuik-panel");
@@ -132,6 +169,7 @@ export function renderElementsEditor(
   function rerender(): void {
     renderElementsEditor(root, stage, spriteGroups, {
       expandedRows,
+      selectedElements,
       onChange,
     });
   }
@@ -140,28 +178,139 @@ export function renderElementsEditor(
   heading.textContent = `BG Elements (${elements().length})`;
   panel.appendChild(heading);
 
+  const toolbarContainer = document.createElement("div");
+  panel.appendChild(toolbarContainer);
+
+  // Row DOM/checkbox references, keyed by element -- lets a selection
+  // change update just the affected rows (a plain click: 1 row; a
+  // Shift-extended range: however many it spans) instead of rebuilding the
+  // whole list, which matters at the "hundreds of BG elements" scale this
+  // feature exists for.
+  const rowRefs = new Map<
+    BGElement,
+    { row: HTMLElement; checkbox: HTMLInputElement }
+  >();
+
+  function refreshRowSelectionVisual(el: BGElement): void {
+    const refs = rowRefs.get(el);
+    if (!refs) return;
+    const selected = selectedElements.has(el);
+    refs.row.classList.toggle("elements-editor__row--selected", selected);
+    refs.checkbox.checked = selected;
+  }
+
+  function refreshBatchToolbar(): void {
+    renderBatchToolbar(toolbarContainer, {
+      elements: elements(),
+      spriteGroups,
+      selectedElements,
+      onClearSelection: () => {
+        for (const el of selectedElements) {
+          selectedElements.delete(el);
+          refreshRowSelectionVisual(el);
+        }
+        refreshBatchToolbar();
+      },
+      onApplyOffset: (deltaX, deltaY) => {
+        const indices = selectedElementIndices(elements(), selectedElements);
+        applyPositionOffset(elements(), indices, deltaX, deltaY);
+        onChange();
+        rerender();
+      },
+      onApplySprite: (sprite) => {
+        const indices = selectedElementIndices(elements(), selectedElements);
+        applySpriteReassignment(elements(), indices, sprite);
+        onChange();
+        rerender();
+      },
+    });
+  }
+
+  /**
+   * Shift+click/Shift+Space: selects the contiguous range from the last
+   * individually-selected row to `el`, forcing every row in the range
+   * (including the one actually clicked) to `checked = true` regardless of
+   * its prior state. The caller must not call `preventDefault` on a mouse
+   * Shift+click that reaches this function (see that call site's own
+   * comment) — the same checkbox activation quirk documented on
+   * `handleSelectSingle` applies to the directly-clicked box here too, not
+   * only to keyboard Space; the browser's own tentative pre-click toggle
+   * would otherwise get reverted right after this function's own
+   * `checkbox.checked = true` runs.
+   */
+  function handleSelectRange(el: BGElement): void {
+    const currentEls = elements();
+    const anchorIndex =
+      lastClickedElement !== null ? currentEls.indexOf(lastClickedElement) : -1;
+    const targetIndex = currentEls.indexOf(el);
+
+    if (anchorIndex === -1 || targetIndex === -1) {
+      handleSelectSingle(el, !selectedElements.has(el));
+      return;
+    }
+    const [start, end] =
+      anchorIndex < targetIndex
+        ? [anchorIndex, targetIndex]
+        : [targetIndex, anchorIndex];
+    for (let i = start; i <= end; i++) {
+      selectedElements.add(currentEls[i]);
+      refreshRowSelectionVisual(currentEls[i]);
+    }
+    refreshBatchToolbar();
+  }
+
+  /**
+   * A plain (non-Shift) click or Space: syncs the selection to the
+   * checkbox's own new `isChecked` value instead of computing a toggle
+   * independently. Deliberately never calls `preventDefault` on the
+   * triggering event — doing so on a Space-*activated* checkbox reverts
+   * its `.checked` back to the pre-activation value once the event
+   * finishes (the checkbox's own "canceled activation steps"), regardless
+   * of what this function sets it to in the meantime. Letting the native
+   * toggle stand and reading it back here sidesteps that entirely; a mouse
+   * click's native toggle already agrees with `isChecked` too, so this is
+   * correct for both input methods.
+   */
+  function handleSelectSingle(el: BGElement, isChecked: boolean): void {
+    if (isChecked) {
+      selectedElements.add(el);
+    } else {
+      selectedElements.delete(el);
+    }
+    lastClickedElement = el;
+    refreshRowSelectionVisual(el);
+    refreshBatchToolbar();
+  }
+
   const list = document.createElement("div");
   list.className = "elements-editor__list";
   elements().forEach((el, index) => {
     const remove = () => {
       elements().splice(index, 1);
       expandedRows.delete(index);
+      selectedElements.delete(el);
+      if (lastClickedElement === el) lastClickedElement = null;
       onChange();
       rerender();
     };
-    list.appendChild(
-      buildRow(
-        el,
-        index,
-        expandedRows,
-        spriteGroups,
-        rerender,
-        onChange,
-        remove,
-      ),
+    const { row, checkbox } = buildRow(
+      el,
+      index,
+      expandedRows,
+      spriteGroups,
+      rerender,
+      onChange,
+      remove,
+      selectedElements.has(el),
+      handleSelectSingle,
+      handleSelectRange,
     );
+    rowRefs.set(el, { row, checkbox });
+    list.appendChild(row);
   });
   panel.appendChild(list);
+
+  refreshBatchToolbar();
 
   const addButton = document.createElement("wuik-button");
   addButton.setAttribute("variant", "secondary");
@@ -180,6 +329,19 @@ export function renderElementsEditor(
   root.appendChild(panel);
 }
 
+/** Resolves the selection's current array indices, freshly, against `elements` -- never stale, since selection is tracked by object reference. */
+function selectedElementIndices(
+  elements: BGElement[],
+  selectedElements: ReadonlySet<BGElement>,
+): Set<number> {
+  const indices = new Set<number>();
+  for (const el of selectedElements) {
+    const index = elements.indexOf(el);
+    if (index !== -1) indices.add(index);
+  }
+  return indices;
+}
+
 function buildRow(
   el: BGElement,
   index: number,
@@ -188,9 +350,56 @@ function buildRow(
   rerender: () => void,
   onChange: () => void,
   remove: () => void,
-): HTMLElement {
+  selected: boolean,
+  onSelectSingle: (el: BGElement, isChecked: boolean) => void,
+  onSelectRange: (el: BGElement) => void,
+): { row: HTMLElement; checkbox: HTMLInputElement } {
   const row = document.createElement("div");
   row.className = "elements-editor__row";
+  row.classList.toggle("elements-editor__row--selected", selected);
+
+  const header = document.createElement("div");
+  header.className = "elements-editor__header";
+
+  const checkbox = document.createElement("input");
+  checkbox.type = "checkbox";
+  checkbox.className = "elements-editor__select";
+  checkbox.dataset.action = "select-element";
+  checkbox.checked = selected;
+  checkbox.setAttribute(
+    "aria-label",
+    `Select ${el.name || "(unnamed)"} for batch editing`,
+  );
+  // Neither branch calls `preventDefault` -- doing so on *either* a plain
+  // or a Shift-modified checkbox click/Space triggers the browser's own
+  // "canceled activation steps", which revert `.checked` back to its
+  // pre-activation value right after this listener returns, regardless of
+  // what JS sets it to in the meantime (a real, confirmed-in-browser
+  // checkbox quirk, not jsdom-testable -- see docs/testing.md). Letting
+  // the native toggle stand and either reading it back (onSelectSingle) or
+  // deterministically overwriting it for the whole range (onSelectRange,
+  // which sets every affected row including this one to `checked = true`
+  // itself) sidesteps that entirely for both input methods.
+  checkbox.addEventListener("click", (event) => {
+    if ((event as MouseEvent).shiftKey) {
+      onSelectRange(el);
+      return;
+    }
+    onSelectSingle(el, checkbox.checked);
+  });
+  checkbox.addEventListener("keydown", (event) => {
+    // Space normally synthesizes a native click, which the listener above
+    // already handles -- this only needs to catch Shift+Space, since a
+    // plain Space's synthetic click may not reliably carry the Shift
+    // modifier across browsers the way a real mouse Shift+click does.
+    // preventDefault here suppresses that synthetic click outright, so the
+    // two listeners never both fire for the same keypress.
+    if (event.key === " " && event.shiftKey) {
+      event.preventDefault();
+      onSelectRange(el);
+    }
+  });
+  header.appendChild(checkbox);
 
   const toggle = document.createElement("button");
   toggle.type = "button";
@@ -216,14 +425,15 @@ function buildRow(
     else expandedRows.delete(index);
   });
 
-  row.append(toggle, body);
+  header.appendChild(toggle);
+  row.append(header, body);
 
   const removeArea = document.createElement("div");
   removeArea.className = "elements-editor__remove-area";
   buildRemoveControl(removeArea, el, remove);
   row.appendChild(removeArea);
 
-  return row;
+  return { row, checkbox };
 }
 
 function updateSummaryText(
@@ -588,4 +798,176 @@ function buildSpritePicker(
   const wrapper = wrapField("Sprite reference", select);
   wrapper.appendChild(errorEl);
   return wrapper;
+}
+
+/** The batch sprite `<select>`'s own "nothing chosen yet" sentinel -- distinct from `UNSET_OPTION_VALUE` ("-1,-1"), which is itself a meaningful, applyable choice here (clear every selected element's sprite in one action). */
+const BATCH_SPRITE_NOT_CHOSEN = "";
+
+interface BatchToolbarOptions {
+  elements: BGElement[];
+  spriteGroups: SpriteGroup[] | null;
+  selectedElements: ReadonlySet<BGElement>;
+  onClearSelection: () => void;
+  onApplyOffset: (deltaX: number, deltaY: number) => void;
+  onApplySprite: (sprite: SpriteRef) => void;
+}
+
+/**
+ * Renders the batch toolbar into `root`, replacing its previous content —
+ * nothing at all while `selectedElements` is empty, per the acceptance
+ * criteria (applying a batch change to an empty selection is a no-op, so
+ * there is nothing to apply in the first place; the toolbar simply doesn't
+ * offer the action).
+ */
+function renderBatchToolbar(
+  root: HTMLElement,
+  options: BatchToolbarOptions,
+): void {
+  root.replaceChildren();
+  if (options.selectedElements.size === 0) return;
+
+  const { elements, spriteGroups, selectedElements } = options;
+
+  const toolbar = document.createElement("div");
+  toolbar.className = "elements-editor__batch-toolbar";
+
+  const status = document.createElement("p");
+  status.className = "elements-editor__batch-count";
+  status.setAttribute("role", "status");
+  status.setAttribute("aria-live", "polite");
+  status.textContent = describeSelection(elements, selectedElements);
+  toolbar.appendChild(status);
+
+  const clearButton = document.createElement("wuik-button");
+  clearButton.setAttribute("variant", "secondary");
+  clearButton.dataset.action = "clear-selection";
+  clearButton.textContent = "Clear selection";
+  clearButton.addEventListener("click", options.onClearSelection);
+  toolbar.appendChild(clearButton);
+
+  toolbar.appendChild(buildBatchOffsetControl(options.onApplyOffset));
+  toolbar.appendChild(
+    buildBatchSpriteControl(spriteGroups, options.onApplySprite),
+  );
+
+  root.appendChild(toolbar);
+}
+
+/** "N selected: name, name, name, +N more" — sorted by current row order, not Set insertion order, so it reads like the list above it. */
+function describeSelection(
+  elements: BGElement[],
+  selectedElements: ReadonlySet<BGElement>,
+): string {
+  const MAX_NAMES_SHOWN = 5;
+  const ordered = elements.filter((el) => selectedElements.has(el));
+  const names = ordered.map((el) => el.name || "(unnamed)");
+  const shown = names.slice(0, MAX_NAMES_SHOWN);
+  const remaining = names.length - shown.length;
+  const suffix = remaining > 0 ? `, +${remaining} more` : "";
+  return `${ordered.length} selected: ${shown.join(", ")}${suffix}`;
+}
+
+function buildBatchOffsetControl(
+  onApplyOffset: (deltaX: number, deltaY: number) => void,
+): HTMLElement {
+  const container = document.createElement("div");
+  container.className = "elements-editor__batch-control";
+
+  const deltaXInput = document.createElement("input");
+  deltaXInput.type = "number";
+  deltaXInput.step = "any";
+  deltaXInput.className = "elements-editor__input";
+  deltaXInput.dataset.field = "batch-delta-x";
+  deltaXInput.value = "0";
+
+  const deltaYInput = document.createElement("input");
+  deltaYInput.type = "number";
+  deltaYInput.step = "any";
+  deltaYInput.className = "elements-editor__input";
+  deltaYInput.dataset.field = "batch-delta-y";
+  deltaYInput.value = "0";
+
+  const applyButton = document.createElement("wuik-button");
+  applyButton.setAttribute("variant", "secondary");
+  applyButton.dataset.action = "apply-offset";
+  applyButton.textContent = "Apply offset";
+
+  function refreshApplyDisabled(): void {
+    const deltaX = Number(deltaXInput.value);
+    const deltaY = Number(deltaYInput.value);
+    const hasRealValue =
+      !Number.isNaN(deltaX) &&
+      !Number.isNaN(deltaY) &&
+      (deltaX !== 0 || deltaY !== 0);
+    applyButton.toggleAttribute("disabled", !hasRealValue);
+  }
+  deltaXInput.addEventListener("input", refreshApplyDisabled);
+  deltaYInput.addEventListener("input", refreshApplyDisabled);
+  refreshApplyDisabled();
+
+  applyButton.addEventListener("click", () => {
+    onApplyOffset(Number(deltaXInput.value), Number(deltaYInput.value));
+  });
+
+  container.append(
+    wrapField("Position offset X", deltaXInput),
+    wrapField("Position offset Y", deltaYInput),
+    applyButton,
+  );
+  return container;
+}
+
+function buildBatchSpriteControl(
+  spriteGroups: SpriteGroup[] | null,
+  onApplySprite: (sprite: SpriteRef) => void,
+): HTMLElement {
+  const container = document.createElement("div");
+  container.className = "elements-editor__batch-control";
+
+  const select = document.createElement("select");
+  select.className = "elements-editor__input";
+  select.dataset.field = "batch-sprite";
+
+  const placeholder = document.createElement("option");
+  placeholder.value = BATCH_SPRITE_NOT_CHOSEN;
+  placeholder.textContent = "Choose a sprite to apply…";
+  select.appendChild(placeholder);
+
+  const clearOption = document.createElement("option");
+  clearOption.value = UNSET_OPTION_VALUE;
+  clearOption.textContent = "— none (clear sprite) —";
+  select.appendChild(clearOption);
+
+  for (const group of spriteGroups ?? []) {
+    for (const sprite of group.sprites) {
+      const option = document.createElement("option");
+      const optionValue = `${sprite.group},${sprite.image}`;
+      option.value = optionValue;
+      option.textContent = `${sprite.group}, ${sprite.image} (${sprite.width}×${sprite.height})`;
+      select.appendChild(option);
+    }
+  }
+
+  const applyButton = document.createElement("wuik-button");
+  applyButton.setAttribute("variant", "secondary");
+  applyButton.dataset.action = "apply-sprite";
+  applyButton.toggleAttribute("disabled", true);
+
+  applyButton.textContent = "Apply sprite";
+
+  select.addEventListener("change", () => {
+    applyButton.toggleAttribute(
+      "disabled",
+      select.value === BATCH_SPRITE_NOT_CHOSEN,
+    );
+  });
+
+  applyButton.addEventListener("click", () => {
+    if (select.value === BATCH_SPRITE_NOT_CHOSEN) return;
+    const [group, image] = select.value.split(",").map(Number);
+    onApplySprite({ group, image });
+  });
+
+  container.append(wrapField("Sprite reference", select), applyButton);
+  return container;
 }

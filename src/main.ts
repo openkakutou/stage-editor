@@ -13,6 +13,7 @@ import { appVersion } from "./version.ts";
 import type { SffWasmBridgeOptions } from "./wasm/sff-bridge.ts";
 import { loadSpriteSheet } from "./wasm/sff-bridge.ts";
 import type { SpriteGroup } from "./wasm/sff-types.ts";
+import type { BGElement } from "./wasm/types.ts";
 import { renderNewStageWizard } from "./wizard/new-stage-wizard.ts";
 
 const APP_TITLE = "Stage Editor";
@@ -92,11 +93,17 @@ export function renderApp(
     // sprite list, so every reference falls back to unverifiable/invalid
     // rather than the editor hanging on "loading" forever.
     const expandedRows = new Set<number>();
+    // Persisted the same way as expandedRows above (backlog item 007): a
+    // sprite sheet finishing decode re-renders this editor, and an
+    // in-progress batch selection must survive that the same way an
+    // expanded row does.
+    const selectedElements = new Set<BGElement>();
     let spriteGroups: SpriteGroup[] | null =
       spriteSheetBytes === null ? [] : null;
     const rerenderElements = () => {
       renderElementsEditor(elementsContainer, doc.stage, spriteGroups, {
         expandedRows,
+        selectedElements,
       });
     };
     rerenderElements();

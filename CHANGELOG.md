@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Users can now select several BG elements at once — click a checkbox, or Shift-click/Shift-Space a second one to select every element in between — and apply a shared position offset or sprite reassignment to all of them in a single action. Selected elements are clearly highlighted, and each batch action shows exactly which elements it will affect and stays disabled until it has a real value to apply.
+
 ## [0.7.0] - 2026-09-02
 
 ### Added

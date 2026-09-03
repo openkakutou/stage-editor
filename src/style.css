@@ -191,11 +191,35 @@
   border-radius: var(--wuik-space-1);
 }
 
+/*
+ * Batch multi-select editing (backlog item 007). A selected row's own
+ * border/background is the "self-evident even when the toolbar has
+ * scrolled out of view" signal called out in the plan consultation --
+ * the checkbox alone isn't enough once a selection can span the row list's
+ * full length.
+ */
+.elements-editor__row--selected {
+  background-color: var(--wuik-color-surface);
+  border-color: var(--wuik-color-accent);
+}
+
+.elements-editor__header {
+  display: flex;
+  align-items: center;
+  gap: var(--wuik-space-2);
+  padding-inline-start: var(--wuik-space-3);
+}
+
+.elements-editor__select {
+  flex: none;
+}
+
 .elements-editor__toggle {
   display: block;
-  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
   text-align: left;
-  padding: var(--wuik-space-2) var(--wuik-space-3);
+  padding: var(--wuik-space-2) var(--wuik-space-3) var(--wuik-space-2) 0;
   font: inherit;
   color: var(--wuik-color-text);
   background: none;
@@ -262,6 +286,36 @@
 .elements-editor__remove-confirm-prompt {
   font-size: var(--wuik-font-size-sm);
   color: var(--wuik-color-text);
+}
+
+/*
+ * Batch toolbar (backlog item 007). Sits at the top of the panel, above the
+ * row list -- not sticky, since the list has no internal scroll container
+ * of its own yet for a sticky position to be anchored against; see
+ * .vibe/decisions/005-bg-element-batch-selection-model-and-scope.md.
+ */
+.elements-editor__batch-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--wuik-space-3);
+  padding: var(--wuik-space-3);
+  background-color: var(--wuik-color-surface);
+  border: 1px solid var(--wuik-color-accent);
+  border-radius: var(--wuik-space-1);
+}
+
+.elements-editor__batch-count {
+  flex: 1 1 100%;
+  margin: 0;
+  font-size: var(--wuik-font-size-sm);
+}
+
+.elements-editor__batch-control {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--wuik-space-2);
 }
 
 /*

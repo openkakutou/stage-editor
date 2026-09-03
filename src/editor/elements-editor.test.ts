@@ -346,3 +346,263 @@ describe("renderElementsEditor", () => {
     expect(stage.elements?.[0]?.startX).toBe(10);
   });
 });
+
+function checkboxes(root: HTMLElement): HTMLInputElement[] {
+  return Array.from(root.querySelectorAll('[data-action="select-element"]'));
+}
+
+describe("renderElementsEditor — batch multi-select editing (item 007)", () => {
+  it("renders no batch toolbar while nothing is selected", () => {
+    const root = document.createElement("div");
+    const stage = stageWith([element(), element()]);
+
+    renderElementsEditor(root, stage, oneSpriteGroup, {});
+
+    expect(root.querySelector(".elements-editor__batch-toolbar")).toBeNull();
+  });
+
+  it("clicking a row's checkbox selects it and shows the batch toolbar with a count", () => {
+    const root = document.createElement("div");
+    const stage = stageWith([
+      element({ name: "sky" }),
+      element({ name: "cloud" }),
+    ]);
+
+    renderElementsEditor(root, stage, oneSpriteGroup, {});
+    checkboxes(root)[0].dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+
+    const toolbar = root.querySelector(".elements-editor__batch-toolbar");
+    expect(toolbar).not.toBeNull();
+    expect(toolbar?.textContent).toContain("1 selected");
+    expect(toolbar?.textContent).toContain("sky");
+  });
+
+  it("clicking a selected row's checkbox again deselects it", () => {
+    const root = document.createElement("div");
+    const stage = stageWith([element()]);
+
+    renderElementsEditor(root, stage, oneSpriteGroup, {});
+    const checkbox = checkboxes(root)[0];
+    checkbox.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    checkbox.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(root.querySelector(".elements-editor__batch-toolbar")).toBeNull();
+  });
+
+  it("shift-clicking a checkbox selects the contiguous range since the last individually-clicked row", () => {
+    const root = document.createElement("div");
+    const stage = stageWith([
+      element({ name: "a" }),
+      element({ name: "b" }),
+      element({ name: "c" }),
+      element({ name: "d" }),
+      element({ name: "e" }),
+    ]);
+
+    renderElementsEditor(root, stage, oneSpriteGroup, {});
+    const boxes = checkboxes(root);
+    boxes[1].dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    boxes[3].dispatchEvent(
+      new MouseEvent("click", { bubbles: true, shiftKey: true }),
+    );
+
+    const toolbar = root.querySelector(".elements-editor__batch-toolbar");
+    expect(toolbar?.textContent).toContain("3 selected");
+    expect(boxes[1].checked).toBe(true);
+    expect(boxes[2].checked).toBe(true);
+    expect(boxes[3].checked).toBe(true);
+    expect(boxes[0].checked).toBe(false);
+    expect(boxes[4].checked).toBe(false);
+  });
+
+  it("marks every selected row with a visual selected state", () => {
+    const root = document.createElement("div");
+    const stage = stageWith([element(), element()]);
+
+    renderElementsEditor(root, stage, oneSpriteGroup, {});
+    checkboxes(root)[0].dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+
+    const rows = root.querySelectorAll(".elements-editor__row");
+    expect(rows[0].classList.contains("elements-editor__row--selected")).toBe(
+      true,
+    );
+    expect(rows[1].classList.contains("elements-editor__row--selected")).toBe(
+      false,
+    );
+  });
+
+  it("Clear selection empties the selection and hides the toolbar", () => {
+    const root = document.createElement("div");
+    const stage = stageWith([element(), element()]);
+
+    renderElementsEditor(root, stage, oneSpriteGroup, {});
+    checkboxes(root)[0].dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+    root
+      .querySelector<HTMLElement>('[data-action="clear-selection"]')
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(root.querySelector(".elements-editor__batch-toolbar")).toBeNull();
+    expect(checkboxes(root).every((c) => !c.checked)).toBe(true);
+  });
+
+  it("Apply offset is disabled until a non-zero delta is entered, then moves every selected element", () => {
+    const root = document.createElement("div");
+    const stage = stageWith([
+      element({ name: "a", startX: 10, startY: 10 }),
+      element({ name: "b", startX: 50, startY: 50 }),
+      element({ name: "c", startX: 90, startY: 90 }),
+    ]);
+
+    renderElementsEditor(root, stage, oneSpriteGroup, {});
+    checkboxes(root)[0].dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+    checkboxes(root)[2].dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+
+    const applyOffset = root.querySelector<HTMLButtonElement>(
+      '[data-action="apply-offset"]',
+    );
+    expect(applyOffset?.hasAttribute("disabled")).toBe(true);
+
+    const deltaX = root.querySelector<HTMLInputElement>(
+      '[data-field="batch-delta-x"]',
+    );
+    if (!deltaX) throw new Error("no batch delta-x field");
+    deltaX.value = "5";
+    deltaX.dispatchEvent(new Event("input"));
+
+    expect(applyOffset?.hasAttribute("disabled")).toBe(false);
+    applyOffset?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(stage.elements?.[0].startX).toBe(15);
+    expect(stage.elements?.[2].startX).toBe(95);
+    // Untouched: not part of the selection.
+    expect(stage.elements?.[1].startX).toBe(50);
+  });
+
+  it("applying a batch offset calls onChange", () => {
+    const root = document.createElement("div");
+    const stage = stageWith([element({ startX: 0, startY: 0 })]);
+    const onChange = vi.fn();
+
+    renderElementsEditor(root, stage, oneSpriteGroup, { onChange });
+    checkboxes(root)[0].dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+    const deltaX = root.querySelector<HTMLInputElement>(
+      '[data-field="batch-delta-x"]',
+    );
+    if (!deltaX) throw new Error("no batch delta-x field");
+    deltaX.value = "1";
+    deltaX.dispatchEvent(new Event("input"));
+    root
+      .querySelector<HTMLElement>('[data-action="apply-offset"]')
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(onChange).toHaveBeenCalled();
+  });
+
+  it("Apply sprite is disabled until a sprite is chosen, then reassigns every selected element", () => {
+    const root = document.createElement("div");
+    const stage = stageWith([
+      element({ name: "a", sprite: { group: -1, image: -1 } }),
+      element({ name: "b", sprite: { group: -1, image: -1 } }),
+    ]);
+
+    renderElementsEditor(root, stage, oneSpriteGroup, {});
+    checkboxes(root)[0].dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+    checkboxes(root)[1].dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+
+    const applySprite = root.querySelector<HTMLButtonElement>(
+      '[data-action="apply-sprite"]',
+    );
+    expect(applySprite?.hasAttribute("disabled")).toBe(true);
+
+    const spriteSelect = root.querySelector<HTMLSelectElement>(
+      '[data-field="batch-sprite"]',
+    );
+    if (!spriteSelect) throw new Error("no batch sprite field");
+    spriteSelect.value = "0,0";
+    spriteSelect.dispatchEvent(new Event("change"));
+
+    expect(applySprite?.hasAttribute("disabled")).toBe(false);
+    applySprite?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(stage.elements?.[0].sprite).toEqual({ group: 0, image: 0 });
+    expect(stage.elements?.[1].sprite).toEqual({ group: 0, image: 0 });
+  });
+
+  it("applying a batch change to an empty selection is impossible from the UI (no toolbar, nothing to apply)", () => {
+    const root = document.createElement("div");
+    const stage = stageWith([element({ startX: 0 })]);
+
+    renderElementsEditor(root, stage, oneSpriteGroup, {});
+
+    expect(root.querySelector('[data-action="apply-offset"]')).toBeNull();
+    expect(root.querySelector('[data-action="apply-sprite"]')).toBeNull();
+    expect(stage.elements?.[0].startX).toBe(0);
+  });
+
+  it("removing a selected row drops it from the selection without corrupting the rest", () => {
+    const root = document.createElement("div");
+    const el0 = element({ name: "a" });
+    const el1 = element({ name: "b" });
+    const stage = stageWith([el0, el1]);
+
+    renderElementsEditor(root, stage, oneSpriteGroup, {
+      expandedRows: new Set([0]),
+    });
+    checkboxes(root)[0].dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+    checkboxes(root)[1].dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+    root
+      .querySelector<HTMLElement>('[data-action="remove-element"]')
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(stage.elements).toHaveLength(1);
+    expect(stage.elements?.[0].name).toBe("b");
+    const toolbar = root.querySelector(".elements-editor__batch-toolbar");
+    expect(toolbar?.textContent).toContain("1 selected");
+  });
+
+  it("a selection made before adding a new element still applies only to the originally selected rows", () => {
+    const root = document.createElement("div");
+    const stage = stageWith([element({ name: "a", startX: 0 })]);
+
+    renderElementsEditor(root, stage, oneSpriteGroup, {});
+    checkboxes(root)[0].dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+    root
+      .querySelector<HTMLElement>('[data-action="add-element"]')
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    const deltaX = root.querySelector<HTMLInputElement>(
+      '[data-field="batch-delta-x"]',
+    );
+    if (!deltaX) throw new Error("no batch delta-x field");
+    deltaX.value = "7";
+    deltaX.dispatchEvent(new Event("input"));
+    root
+      .querySelector<HTMLElement>('[data-action="apply-offset"]')
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(stage.elements?.[0].startX).toBe(7);
+    expect(stage.elements?.[1].startX).toBe(0); // the freshly added element, never selected
+  });
+});
