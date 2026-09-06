@@ -11,6 +11,18 @@
 }
 
 /*
+ * Undo/Redo controls (backlog item 008) — pushed to the toolbar's far end,
+ * away from the title, since they act on the document rather than
+ * identifying the app. Ported from `lifebar-editor`'s own identical
+ * `.app-undo-redo` rule.
+ */
+.app-undo-redo {
+  display: flex;
+  gap: var(--wuik-space-2);
+  margin-inline-start: auto;
+}
+
+/*
  * Stage file input (backlog item 002). Mirrors `stage-viewer-web`'s own
  * folder-input styling verbatim — same dropzone/status/reset shape, same
  * class names, since this is the same component ported as-is.

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Every edit in the characteristics editor and the BG element editor — including add/remove, and a batch position offset or sprite reassignment applied to several selected elements — can now be undone and redone. Undo and Redo toolbar buttons appear next to the app title, disabled whenever there's nothing to undo or redo. A batch edit undoes and redoes as a single step, not one per affected element. Undo/redo history starts fresh whenever a stage is loaded or a new one is created.
+
 ## [0.8.0] - 2026-09-03
 
 ### Added

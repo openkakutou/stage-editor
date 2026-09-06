@@ -1,12 +1,14 @@
 import "@openkakutou/web-ui-kit/tokens.css";
 import "@openkakutou/web-ui-kit";
 import "./style.css";
+import { commandStack } from "./document/command-stack-store.ts";
 import type { StageDocument } from "./document/stage-document-store.ts";
 import { setStageDocument } from "./document/stage-document-store.ts";
 import { renderCharacteristicsEditor } from "./editor/characteristics-editor.ts";
 import { renderElementsEditor } from "./editor/elements-editor.ts";
 import { renderModelEditor } from "./editor/model-editor.ts";
 import { renderSaveExport } from "./editor/save-export.ts";
+import { renderUndoRedoControls } from "./editor/undo-redo-controls.ts";
 import { renderStageFileInput } from "./input/stage-file-input-view.ts";
 import type { StageFolderInputOptions } from "./input/stage-file-input.ts";
 import { appVersion } from "./version.ts";
@@ -52,6 +54,16 @@ export function renderApp(
   title.className = "app-title";
   title.textContent = `${APP_TITLE} — v${version}`;
   toolbar.appendChild(title);
+
+  // Undo/Redo (backlog item 008): the explicit toolbar-control reachability
+  // path — a keyboard shortcut is deferred until this app adopts a shared
+  // shortcut manager (item 009), see
+  // .vibe/decisions/006-undo-redo-scoped-to-current-document-shortcut-deferred.md.
+  const undoRedoSection = document.createElement("div");
+  undoRedoSection.className = "app-undo-redo";
+  const undoRedoControls = renderUndoRedoControls(undoRedoSection);
+  toolbar.appendChild(undoRedoSection);
+
   shell.appendChild(toolbar);
 
   const main = document.createElement("main");
@@ -78,8 +90,20 @@ export function renderApp(
     spriteSheetBytes: Uint8Array | null,
     focusCharacteristics: boolean,
   ): void {
+    // Undo/redo only ever applies to the currently loaded document — an
+    // undo step from a document that's about to be replaced would corrupt
+    // the new one (see .vibe/decisions/006). Cleared before the swap so no
+    // stale history survives it.
+    commandStack.clear();
+    undoRedoControls.refresh();
+
     setStageDocument(doc);
-    renderCharacteristicsEditor(characteristicsContainer, doc.stage);
+    renderCharacteristicsEditor(characteristicsContainer, doc.stage, {
+      onChange: (command) => {
+        commandStack.push(command);
+        undoRedoControls.refresh();
+      },
+    });
     renderModelEditor(modelEditorContainer, doc.stage);
     renderSaveExport(saveExportContainer);
 
@@ -104,6 +128,10 @@ export function renderApp(
       renderElementsEditor(elementsContainer, doc.stage, spriteGroups, {
         expandedRows,
         selectedElements,
+        onChange: (command) => {
+          commandStack.push(command);
+          undoRedoControls.refresh();
+        },
       });
     };
     rerenderElements();

@@ -35,15 +35,17 @@ flowchart LR
 
 - **`app`** (`src/main.ts`, `src/version.ts`, `src/style.css`) — the entry
   point. Builds the root layout: the org's shared `@openkakutou/web-ui-kit`
-  app shell, a toolbar (app title + version) plus the stage file input,
-  the New Stage Wizard (backlog item 005), the characteristics editor, the
-  BG element editor, and the Save/Export button as main content. A loaded
-  file and a wizard-created stage both funnel into the same
-  `mountDocument` wiring, so the editors appear the same way regardless of
-  entry point; a wizard-driven creation additionally moves focus into the
-  characteristics editor's first field, since the wizard has no second
-  confirm screen of its own to give that positive feedback. No
-  sidebar/tabs slotted yet.
+  app shell, a toolbar (app title + version, plus Undo/Redo buttons —
+  backlog item 008) plus the stage file input, the New Stage Wizard
+  (backlog item 005), the characteristics editor, the BG element editor,
+  and the Save/Export button as main content. A loaded file and a
+  wizard-created stage both funnel into the same `mountDocument` wiring,
+  so the editors appear the same way regardless of entry point; a
+  wizard-driven creation additionally moves focus into the characteristics
+  editor's first field, since the wizard has no second confirm screen of
+  its own to give that positive feedback. `mountDocument` also clears the
+  shared undo/redo history before storing the new document — see "Undo/redo"
+  below. No sidebar/tabs slotted yet.
 - **`input`** (`src/input/`) — the stage folder input (backlog item 002).
   `folder-entries.ts` gathers files from a folder selection or a
   drag-and-drop. `stage-file-input.ts` picks which gathered file is the
@@ -72,6 +74,9 @@ flowchart LR
   `.vibe/decisions/003-new-stage-defaults-and-unsaved-changes-guard.md`
   for why. Deciding what to do about an unsaved-changes answer (the
   discard-confirmation prompt) belongs to the caller, not this store.
+  `command-stack-store.ts` (backlog item 008) holds the single shared
+  `@openkakutou/web-ui-kit` `CommandStack` instance every editor screen
+  pushes undo/redo commands onto — see "Undo/redo" below.
 - **`wizard`** (`src/wizard/`) — the New Stage Wizard (backlog item 005).
   `new-stage-defaults.ts` is pure data: `createBlankStage()` builds a
   minimal valid stage (standard 320×240 coordinate space, sensible
@@ -126,6 +131,12 @@ flowchart LR
   bridge (see "Sprite reference validation" below). Backlog item 007 adds
   multi-select batch editing on top of the same row list — see "Batch
   multi-select editing" below.
+  `undo-redo-controls.ts` (backlog item 008) renders the toolbar's Undo/Redo
+  buttons — a thin view over the shared `CommandStack`'s
+  `canUndo`/`canRedo`/`undo`/`redo`, disabled at the ends of history.
+  `field-command.ts` is a small shared helper both `characteristics-editor.ts`
+  and `elements-editor.ts` build their undo/redo commands with — see
+  "Undo/redo" below.
   `save-export.ts` (backlog item 004) renders the "Save / Export" button:
   on click, reads the document store fresh, calls `wasm.saveStage`, and —
   on success — triggers a browser download of the result via a throwaway
@@ -243,8 +254,8 @@ reassignment" bullet.
   each Apply action (`bg-element-batch-edit.ts`'s pure
   `applyPositionOffset`/`applySpriteReassignment`) stays disabled until it
   has a real value to apply (a non-zero offset, or an actually-chosen
-  sprite) — there is no undo in this app yet, so a batch action's scope
-  must be self-evident before it commits.
+  sprite) — a batch action's scope stays self-evident before it commits,
+  and it's undoable as a single step regardless (see "Undo/redo" below).
 - **Checkbox activation quirk (real-browser-only, not jsdom-testable):**
   calling `preventDefault()` on a checkbox's `click` event — whether
   triggered by a mouse click or a Space keypress — reverts `.checked`
@@ -261,6 +272,50 @@ reassignment" bullet.
   all, sidestepping the same quirk from a different angle) — a plain
   Space's synthetic click isn't reliably guaranteed to carry the Shift
   modifier the way a real mouse Shift+click does.
+
+## Undo/redo (backlog item 008)
+
+Every mutating action in the characteristics editor and the BG element
+editor — including add/remove and a batch offset/sprite reassignment —
+pushes a do/undo pair onto the single shared `@openkakutou/web-ui-kit`
+`CommandStack` instance (`document/command-stack-store.ts`), rather than
+each editor screen inventing its own history. `undo-redo-controls.ts`'s
+toolbar buttons are a thin view over that stack's own
+`canUndo`/`canRedo`; `app` calls their `refresh()` after every push, undo,
+or redo, since the stack itself has no change event to subscribe to.
+
+- Each field commit builds a `Command` via `field-command.ts`'s
+  `fieldCommand` helper: `apply(value)` sets both the underlying data and
+  whatever DOM directly reflects that one field (never a full editor
+  rerender), so it stays safe to call synchronously from
+  `CommandStack.push` (which invokes `do()` immediately) without
+  disturbing an in-progress Tab/focus move.
+- Rapid successive edits to the *same* field coalesce into one history
+  entry (typing a name, repeated blur-edits of one number), via a
+  `coalesceKey` scoped to that exact field. In `elements-editor.ts`, the
+  key is additionally scoped per BG element (a lazily-assigned id in a
+  `WeakMap<BGElement, number>`) — without that, editing the same-named
+  field on two *different* elements within the coalesce window would
+  wrongly merge into a single history entry.
+- Add, remove, and a type switch are each their own (never-coalescing)
+  history entry, built directly as a `Command` literal rather than
+  through `fieldCommand` — add/remove's `apply` is a presence toggle
+  guarded by an `.includes()` check so it stays idempotent however many
+  times `do()`/`undo()` end up called.
+- A batch offset or sprite reassignment (backlog item 007) pushes exactly
+  one `Command` for the whole selection. Both replay from an up-front
+  snapshot of each affected element's own prior state to a precomputed
+  absolute target — never by re-adding/re-subtracting a delta on each
+  call — since `CommandStack.push` always invokes `do()` once immediately
+  in addition to the caller's own explicit first apply; an additive
+  replay was caught doubling the offset on the very first click during
+  real-browser verification.
+- The stack is cleared whenever a document loads or a new one is
+  created (`app`'s `mountDocument`) — undo/redo only ever applies to the
+  currently loaded document, never across a swap. The keyboard-shortcut
+  reachability path is deferred until this app adopts a shared shortcut
+  manager (backlog item 009); only the toolbar-button path ships now. See
+  `.vibe/decisions/006-undo-redo-scoped-to-current-document-shortcut-deferred.md`.
 
 ## Data flow: saving a stage
 

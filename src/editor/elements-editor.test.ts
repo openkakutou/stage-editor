@@ -1,3 +1,4 @@
+import { CommandStack } from "@openkakutou/web-ui-kit";
 import { describe, expect, it, vi } from "vitest";
 import type { SpriteGroup } from "../wasm/sff-types.ts";
 import type { BGElement, StageData } from "../wasm/types.ts";
@@ -604,5 +605,317 @@ describe("renderElementsEditor — batch multi-select editing (item 007)", () =>
 
     expect(stage.elements?.[0].startX).toBe(7);
     expect(stage.elements?.[1].startX).toBe(0); // the freshly added element, never selected
+  });
+});
+
+type TestCommand = { do(): void; undo(): void; coalesceKey?: string };
+
+describe("renderElementsEditor — undo/redo commands (item 008)", () => {
+  it("passes a Command whose undo() reverts a plain field edit and whose do() re-applies it", () => {
+    const root = document.createElement("div");
+    const el = element({ startX: 0 });
+    const stage = stageWith([el]);
+    let pushed: TestCommand | undefined;
+
+    renderElementsEditor(root, stage, oneSpriteGroup, {
+      expandedRows: new Set([0]),
+      onChange: (command) => {
+        pushed = command;
+      },
+    });
+
+    const input = root.querySelector<HTMLInputElement>('[data-field="startX"]');
+    if (!input) throw new Error("no startX input");
+    input.value = "50";
+    input.dispatchEvent(new Event("blur"));
+
+    expect(el.startX).toBe(50);
+    pushed?.undo();
+    expect(el.startX).toBe(0);
+    pushed?.do();
+    expect(el.startX).toBe(50);
+  });
+
+  it("does not push a command when a field is blurred with its existing value unchanged", () => {
+    const root = document.createElement("div");
+    const stage = stageWith([element({ startX: 0 })]);
+    const onChange = vi.fn();
+
+    renderElementsEditor(root, stage, oneSpriteGroup, {
+      expandedRows: new Set([0]),
+      onChange,
+    });
+
+    const input = root.querySelector<HTMLInputElement>('[data-field="startX"]');
+    if (!input) throw new Error("no startX input");
+    input.value = "0";
+    input.dispatchEvent(new Event("blur"));
+
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("gives the same field on two different elements distinct coalesce keys, so rapid edits never merge across elements", () => {
+    const root = document.createElement("div");
+    const stage = stageWith([element({ name: "a" }), element({ name: "b" })]);
+    const commands: TestCommand[] = [];
+
+    renderElementsEditor(root, stage, oneSpriteGroup, {
+      expandedRows: new Set([0, 1]),
+      onChange: (command) => commands.push(command),
+    });
+
+    const inputs = root.querySelectorAll<HTMLInputElement>(
+      '[data-field="startX"]',
+    );
+    expect(inputs).toHaveLength(2);
+
+    inputs[0].value = "10";
+    inputs[0].dispatchEvent(new Event("blur"));
+    inputs[1].value = "20";
+    inputs[1].dispatchEvent(new Event("blur"));
+
+    expect(commands).toHaveLength(2);
+    expect(commands[0].coalesceKey).toBeDefined();
+    expect(commands[0].coalesceKey).not.toBe(commands[1].coalesceKey);
+  });
+
+  it("passes a Command for adding an element whose undo() removes it and whose do() re-adds it", () => {
+    const root = document.createElement("div");
+    const stage = stageWith([]);
+    let pushed: TestCommand | undefined;
+
+    renderElementsEditor(root, stage, oneSpriteGroup, {
+      onChange: (command) => {
+        pushed = command;
+      },
+    });
+
+    root
+      .querySelector<HTMLElement>('[data-action="add-element"]')
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(stage.elements).toHaveLength(1);
+    pushed?.undo();
+    expect(stage.elements).toHaveLength(0);
+    pushed?.do();
+    expect(stage.elements).toHaveLength(1);
+  });
+
+  it("passes a Command for removing an element whose undo() restores it at its original position", () => {
+    const root = document.createElement("div");
+    const first = element({ name: "a" });
+    const second = element({ name: "b" });
+    const stage = stageWith([first, second]);
+    let pushed: TestCommand | undefined;
+
+    renderElementsEditor(root, stage, oneSpriteGroup, {
+      onChange: (command) => {
+        pushed = command;
+      },
+    });
+
+    root
+      .querySelector<HTMLElement>('[data-action="remove-element"]')
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(stage.elements).toHaveLength(1);
+    expect(stage.elements?.[0].name).toBe("b");
+
+    pushed?.undo();
+    expect(stage.elements).toHaveLength(2);
+    expect(stage.elements?.[0].name).toBe("a");
+    expect(stage.elements?.[1].name).toBe("b");
+
+    pushed?.do();
+    expect(stage.elements).toHaveLength(1);
+    expect(stage.elements?.[0].name).toBe("b");
+  });
+
+  it("passes a Command for a type switch whose undo() restores the previous type", () => {
+    const root = document.createElement("div");
+    const el = element({ type: "normal" });
+    const stage = stageWith([el]);
+    let pushed: TestCommand | undefined;
+
+    renderElementsEditor(root, stage, oneSpriteGroup, {
+      expandedRows: new Set([0]),
+      onChange: (command) => {
+        pushed = command;
+      },
+    });
+
+    const typeSelect = root.querySelector<HTMLSelectElement>(
+      '[data-field="type"]',
+    );
+    if (!typeSelect) throw new Error("no type select");
+    typeSelect.value = "anim";
+    typeSelect.dispatchEvent(new Event("change"));
+
+    expect(el.type).toBe("anim");
+    pushed?.undo();
+    expect(el.type).toBe("normal");
+    pushed?.do();
+    expect(el.type).toBe("anim");
+  });
+
+  it("passes a Command for a sprite reference change whose undo() restores the previous reference", () => {
+    const root = document.createElement("div");
+    const el = element({ sprite: { group: -1, image: -1 } });
+    const stage = stageWith([el]);
+    let pushed: TestCommand | undefined;
+
+    renderElementsEditor(root, stage, oneSpriteGroup, {
+      expandedRows: new Set([0]),
+      onChange: (command) => {
+        pushed = command;
+      },
+    });
+
+    const select = root.querySelector<HTMLSelectElement>(
+      '[data-field="sprite"]',
+    );
+    if (!select) throw new Error("no sprite select");
+    select.value = "0,0";
+    select.dispatchEvent(new Event("change"));
+
+    expect(el.sprite).toEqual({ group: 0, image: 0 });
+    pushed?.undo();
+    expect(el.sprite).toEqual({ group: -1, image: -1 });
+    pushed?.do();
+    expect(el.sprite).toEqual({ group: 0, image: 0 });
+  });
+
+  it("a batch offset apply pushes exactly one Command that reverts every affected element at once", () => {
+    const root = document.createElement("div");
+    const stage = stageWith([
+      element({ name: "a", startX: 10, startY: 10 }),
+      element({ name: "b", startX: 50, startY: 50 }),
+      element({ name: "c", startX: 90, startY: 90 }),
+    ]);
+    const commands: TestCommand[] = [];
+
+    renderElementsEditor(root, stage, oneSpriteGroup, {
+      onChange: (command) => commands.push(command),
+    });
+    checkboxes(root)[0].dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+    checkboxes(root)[2].dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+    const deltaX = root.querySelector<HTMLInputElement>(
+      '[data-field="batch-delta-x"]',
+    );
+    if (!deltaX) throw new Error("no batch delta-x field");
+    deltaX.value = "5";
+    deltaX.dispatchEvent(new Event("input"));
+    root
+      .querySelector<HTMLElement>('[data-action="apply-offset"]')
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(commands).toHaveLength(1);
+    expect(stage.elements?.[0].startX).toBe(15);
+    expect(stage.elements?.[2].startX).toBe(95);
+
+    commands[0].undo();
+    expect(stage.elements?.[0].startX).toBe(10);
+    expect(stage.elements?.[2].startX).toBe(90);
+    // Untouched throughout: not part of the selection.
+    expect(stage.elements?.[1].startX).toBe(50);
+
+    commands[0].do();
+    expect(stage.elements?.[0].startX).toBe(15);
+    expect(stage.elements?.[2].startX).toBe(95);
+  });
+
+  it("calling a batch offset Command's do() a second time in a row does not double-apply the offset (regression: CommandStack.push already calls do() once itself)", () => {
+    const root = document.createElement("div");
+    const stage = stageWith([element({ name: "a", startX: 0, startY: 0 })]);
+    const commands: TestCommand[] = [];
+
+    renderElementsEditor(root, stage, oneSpriteGroup, {
+      onChange: (command) => commands.push(command),
+    });
+    checkboxes(root)[0].dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+    const deltaX = root.querySelector<HTMLInputElement>(
+      '[data-field="batch-delta-x"]',
+    );
+    if (!deltaX) throw new Error("no batch delta-x field");
+    deltaX.value = "10";
+    deltaX.dispatchEvent(new Event("input"));
+    root
+      .querySelector<HTMLElement>('[data-action="apply-offset"]')
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    // The click above already applied the offset once; a real
+    // `CommandStack.push` would immediately call `do()` on top of that.
+    // The result must stay at the single-application value, not double it.
+    commands[0].do();
+    expect(stage.elements?.[0].startX).toBe(10);
+  });
+
+  it("pushing a batch offset Command through the real shared CommandStack leaves the offset applied exactly once", () => {
+    const root = document.createElement("div");
+    const stage = stageWith([element({ name: "a", startX: 0, startY: 0 })]);
+    const stack = new CommandStack();
+
+    renderElementsEditor(root, stage, oneSpriteGroup, {
+      onChange: (command) => stack.push(command),
+    });
+    checkboxes(root)[0].dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+    const deltaX = root.querySelector<HTMLInputElement>(
+      '[data-field="batch-delta-x"]',
+    );
+    if (!deltaX) throw new Error("no batch delta-x field");
+    deltaX.value = "10";
+    deltaX.dispatchEvent(new Event("input"));
+    root
+      .querySelector<HTMLElement>('[data-action="apply-offset"]')
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(stage.elements?.[0].startX).toBe(10);
+    stack.undo();
+    expect(stage.elements?.[0].startX).toBe(0);
+  });
+
+  it("a batch sprite reassignment pushes one Command that restores each element's own previous sprite, not a shared one", () => {
+    const root = document.createElement("div");
+    const stage = stageWith([
+      element({ name: "a", sprite: { group: -1, image: -1 } }),
+      element({ name: "b", sprite: { group: 9, image: 9 } }),
+    ]);
+    const commands: TestCommand[] = [];
+
+    renderElementsEditor(root, stage, oneSpriteGroup, {
+      onChange: (command) => commands.push(command),
+    });
+    checkboxes(root)[0].dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+    checkboxes(root)[1].dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+    const spriteSelect = root.querySelector<HTMLSelectElement>(
+      '[data-field="batch-sprite"]',
+    );
+    if (!spriteSelect) throw new Error("no batch sprite field");
+    spriteSelect.value = "0,0";
+    spriteSelect.dispatchEvent(new Event("change"));
+    root
+      .querySelector<HTMLElement>('[data-action="apply-sprite"]')
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(commands).toHaveLength(1);
+    expect(stage.elements?.[0].sprite).toEqual({ group: 0, image: 0 });
+    expect(stage.elements?.[1].sprite).toEqual({ group: 0, image: 0 });
+
+    commands[0].undo();
+    // Each element's own distinct prior sprite is restored, not a single shared value.
+    expect(stage.elements?.[0].sprite).toEqual({ group: -1, image: -1 });
+    expect(stage.elements?.[1].sprite).toEqual({ group: 9, image: 9 });
   });
 });

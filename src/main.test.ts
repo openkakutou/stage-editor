@@ -2,6 +2,10 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
+  commandStack,
+  resetCommandStackForTests,
+} from "./document/command-stack-store.ts";
+import {
   getStageDocument,
   hasUnsavedStageChanges,
   resetStageDocumentForTests,
@@ -50,10 +54,27 @@ describe("renderApp", () => {
     const toolbar = shell?.querySelector('[slot="toolbar"]');
     expect(toolbar?.tagName.toLowerCase()).toBe("wuik-toolbar");
     expect(toolbar?.getAttribute("role")).toBe("banner");
-    expect(toolbar?.textContent).toBe("Stage Editor — v0.1.0");
+    expect(toolbar?.querySelector(".app-title")?.textContent).toBe(
+      "Stage Editor — v0.1.0",
+    );
 
     const main = shell?.querySelector("main");
     expect(main).not.toBeNull();
+  });
+
+  it("renders Undo and Redo controls in the toolbar, both disabled before anything is loaded", () => {
+    resetCommandStackForTests();
+    const root = document.createElement("div");
+
+    renderApp(root, "0.1.0");
+
+    const toolbar = root.querySelector('[slot="toolbar"]');
+    const undo = toolbar?.querySelector('[data-action="undo"]');
+    const redo = toolbar?.querySelector('[data-action="redo"]');
+    expect(undo).not.toBeNull();
+    expect(redo).not.toBeNull();
+    expect(undo?.hasAttribute("disabled")).toBe(true);
+    expect(redo?.hasAttribute("disabled")).toBe(true);
   });
 
   it("renders the stage file input inside the main content area", () => {
@@ -90,7 +111,7 @@ describe("renderApp", () => {
     renderApp(root, "0.2.0");
 
     expect(root.querySelectorAll("wuik-app-shell")).toHaveLength(1);
-    expect(root.querySelector('[slot="toolbar"]')?.textContent).toBe(
+    expect(root.querySelector('[slot="toolbar"] .app-title')?.textContent).toBe(
       "Stage Editor — v0.2.0",
     );
   });
@@ -99,7 +120,7 @@ describe("renderApp", () => {
     const root = document.createElement("div");
 
     expect(() => renderApp(root, "")).not.toThrow();
-    expect(root.querySelector('[slot="toolbar"]')?.textContent).toBe(
+    expect(root.querySelector('[slot="toolbar"] .app-title')?.textContent).toBe(
       "Stage Editor — v",
     );
   });
@@ -221,5 +242,96 @@ describe("renderApp — 3D model editor integration", () => {
 
     expect(root.querySelector('[data-field="bgDef.near"]')).not.toBeNull();
     expect(root.querySelector('[data-field="playerStartZ.p1"]')).not.toBeNull();
+  });
+});
+
+function undoButton(root: HTMLElement): HTMLElement {
+  const button = root.querySelector<HTMLElement>('[data-action="undo"]');
+  if (!button) throw new Error("undo button not found");
+  return button;
+}
+
+function redoButton(root: HTMLElement): HTMLElement {
+  const button = root.querySelector<HTMLElement>('[data-action="redo"]');
+  if (!button) throw new Error("redo button not found");
+  return button;
+}
+
+describe("renderApp — undo/redo integration (backlog item 008)", () => {
+  it("editing the characteristics editor after creating a stage enables Undo; clicking it reverts the edit", () => {
+    resetStageDocumentForTests();
+    resetCommandStackForTests();
+    const root = document.createElement("div");
+    renderApp(root, "0.1.0");
+    blankStageButton(root).click();
+
+    expect(undoButton(root).hasAttribute("disabled")).toBe(true);
+
+    const nameInput = root.querySelector<HTMLInputElement>(
+      "#characteristics-editor-name",
+    );
+    if (!nameInput) throw new Error("no name input");
+    nameInput.value = "Renamed";
+    nameInput.dispatchEvent(new Event("input"));
+
+    expect(getStageDocument()?.stage.name).toBe("Renamed");
+    expect(undoButton(root).hasAttribute("disabled")).toBe(false);
+
+    const originalName = "New Stage";
+    undoButton(root).click();
+
+    expect(getStageDocument()?.stage.name).toBe(originalName);
+    expect(undoButton(root).hasAttribute("disabled")).toBe(true);
+    expect(redoButton(root).hasAttribute("disabled")).toBe(false);
+  });
+
+  it("adding then removing a BG element are each undoable as their own step", () => {
+    resetStageDocumentForTests();
+    resetCommandStackForTests();
+    const root = document.createElement("div");
+    renderApp(root, "0.1.0");
+    blankStageButton(root).click();
+
+    root
+      .querySelector<HTMLElement>('[data-action="add-element"]')
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(getStageDocument()?.stage.elements).toHaveLength(1);
+
+    undoButton(root).click();
+    expect(getStageDocument()?.stage.elements).toHaveLength(0);
+    expect(undoButton(root).hasAttribute("disabled")).toBe(true);
+
+    redoButton(root).click();
+    expect(getStageDocument()?.stage.elements).toHaveLength(1);
+  });
+
+  it("clears the undo history when a new stage document replaces the current one", () => {
+    resetStageDocumentForTests();
+    resetCommandStackForTests();
+    const root = document.createElement("div");
+    renderApp(root, "0.1.0");
+    blankStageButton(root).click();
+
+    const nameInput = root.querySelector<HTMLInputElement>(
+      "#characteristics-editor-name",
+    );
+    if (!nameInput) throw new Error("no name input");
+    nameInput.value = "Renamed";
+    nameInput.dispatchEvent(new Event("input"));
+    expect(commandStack.canUndo).toBe(true);
+
+    const doc = getStageDocument();
+    if (!doc) throw new Error("expected a document after creation");
+    doc.stage.name = "Renamed"; // already dirty from the edit above
+
+    // Discard the edited stage and start a fresh one — the discard
+    // confirmation is accepted so creation actually proceeds.
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    blankStageButton(root).click();
+
+    expect(commandStack.canUndo).toBe(false);
+    expect(commandStack.canRedo).toBe(false);
+    expect(undoButton(root).hasAttribute("disabled")).toBe(true);
+    vi.restoreAllMocks();
   });
 });

@@ -50,6 +50,7 @@
 // feature exists for); applying a batch action does trigger a full
 // `rerender()`, same as any other structural change, since it can touch
 // many rows' displayed values at once.
+import type { Command } from "@openkakutou/web-ui-kit";
 import type { Sprite, SpriteGroup } from "../wasm/sff-types.ts";
 import type {
   BGElement,
@@ -61,6 +62,7 @@ import {
   applyPositionOffset,
   applySpriteReassignment,
 } from "./bg-element-batch-edit.ts";
+import { fieldCommand } from "./field-command.ts";
 
 export interface ElementsEditorOptions {
   /**
@@ -80,8 +82,27 @@ export interface ElementsEditorOptions {
    * `.vibe/decisions/005-bg-element-batch-selection-model-and-scope.md`.
    */
   selectedElements?: Set<BGElement>;
-  /** Called after any committed edit — add, remove, a field change, or a batch apply. */
-  onChange?: () => void;
+  /** Called with an undo/redo Command after any committed edit — add, remove, a field change, a type switch, or a batch apply (backlog item 008). */
+  onChange?: (command: Command) => void;
+}
+
+// A stable per-element id for undo/redo coalesce keys only (backlog item
+// 008) -- never used for identity/lookup elsewhere in this file, which
+// already tracks elements by object reference. Without this, two different
+// elements' same-named field (e.g. both rows' "startX") would share the
+// bare field name as a coalesce key, and a quick edit-A-then-edit-B could
+// wrongly merge into a single history entry that silently drops one of the
+// two edits (caught during plan consultation). Assigned lazily so an
+// element never touched by a coalescing field never needs one.
+const elementIds = new WeakMap<BGElement, number>();
+let nextElementId = 0;
+function elementCoalesceScope(el: BGElement): number {
+  let id = elementIds.get(el);
+  if (id === undefined) {
+    id = nextElementId++;
+    elementIds.set(el, id);
+  }
+  return id;
 }
 
 const UNSET_SPRITE: SpriteRef = Object.freeze({ group: -1, image: -1 });
@@ -212,16 +233,71 @@ export function renderElementsEditor(
         refreshBatchToolbar();
       },
       onApplyOffset: (deltaX, deltaY) => {
+        // A single undo step for the whole batch (backlog item 008,
+        // acceptance criteria). `do()`/`undo()` replay from each affected
+        // element's own snapshotted *original* position to a precomputed
+        // absolute target, rather than re-adding/re-subtracting the delta
+        // each time -- `CommandStack.push` always invokes `do()` once
+        // immediately in addition to the explicit apply below, so `do()`
+        // must be safe to call more than once without double-applying the
+        // offset (caught by real-browser runtime verification: an additive
+        // replay doubled every position on the very first apply).
         const indices = selectedElementIndices(elements(), selectedElements);
+        const original = new Map<
+          BGElement,
+          { startX: number; startY: number }
+        >();
+        for (const index of indices) {
+          const target = elements()[index];
+          if (target) {
+            original.set(target, {
+              startX: target.startX,
+              startY: target.startY,
+            });
+          }
+        }
         applyPositionOffset(elements(), indices, deltaX, deltaY);
-        onChange();
         rerender();
+        onChange({
+          do: () => {
+            for (const [target, pos] of original) {
+              target.startX = pos.startX + deltaX;
+              target.startY = pos.startY + deltaY;
+            }
+            rerender();
+          },
+          undo: () => {
+            for (const [target, pos] of original) {
+              target.startX = pos.startX;
+              target.startY = pos.startY;
+            }
+            rerender();
+          },
+        });
       },
       onApplySprite: (sprite) => {
+        // A single undo step for the whole batch. Unlike the offset above,
+        // a sprite reassignment overwrites uniformly, so each affected
+        // element's own *previous* sprite (not necessarily the same as any
+        // other's) is snapshotted up front to restore correctly on undo.
         const indices = selectedElementIndices(elements(), selectedElements);
-        applySpriteReassignment(elements(), indices, sprite);
-        onChange();
-        rerender();
+        const previousSprites = new Map<BGElement, SpriteRef>();
+        for (const index of indices) {
+          const target = elements()[index];
+          if (target) previousSprites.set(target, { ...target.sprite });
+        }
+        const applyNew = () => {
+          applySpriteReassignment(elements(), indices, sprite);
+          rerender();
+        };
+        const applyOld = () => {
+          for (const [target, previous] of previousSprites) {
+            target.sprite = { ...previous };
+          }
+          rerender();
+        };
+        applyNew();
+        onChange({ do: applyNew, undo: applyOld });
       },
     });
   }
@@ -286,12 +362,26 @@ export function renderElementsEditor(
   list.className = "elements-editor__list";
   elements().forEach((el, index) => {
     const remove = () => {
-      elements().splice(index, 1);
-      expandedRows.delete(index);
-      selectedElements.delete(el);
-      if (lastClickedElement === el) lastClickedElement = null;
-      onChange();
-      rerender();
+      const wasExpanded = expandedRows.has(index);
+      const wasSelected = selectedElements.has(el);
+      const wasLastClicked = lastClickedElement === el;
+      const apply = (present: boolean) => {
+        if (present) {
+          if (!elements().includes(el)) elements().splice(index, 0, el);
+          if (wasExpanded) expandedRows.add(index);
+          if (wasSelected) selectedElements.add(el);
+          if (wasLastClicked) lastClickedElement = el;
+        } else {
+          const currentIndex = elements().indexOf(el);
+          if (currentIndex !== -1) elements().splice(currentIndex, 1);
+          expandedRows.delete(index);
+          selectedElements.delete(el);
+          if (lastClickedElement === el) lastClickedElement = null;
+        }
+        rerender();
+      };
+      apply(false);
+      onChange({ do: () => apply(false), undo: () => apply(true) });
     };
     const { row, checkbox } = buildRow(
       el,
@@ -318,11 +408,22 @@ export function renderElementsEditor(
   addButton.textContent = "Add element";
   addButton.addEventListener("click", () => {
     const el = blankElement();
-    const list = elements();
-    list.push(el);
-    expandedRows.add(list.length - 1);
-    onChange();
-    rerender();
+    const insertIndex = elements().length;
+    const apply = (present: boolean) => {
+      if (present) {
+        if (!elements().includes(el)) elements().splice(insertIndex, 0, el);
+        expandedRows.add(insertIndex);
+      } else {
+        const currentIndex = elements().indexOf(el);
+        if (currentIndex !== -1) elements().splice(currentIndex, 1);
+        expandedRows.delete(insertIndex);
+        selectedElements.delete(el);
+        if (lastClickedElement === el) lastClickedElement = null;
+      }
+      rerender();
+    };
+    apply(true);
+    onChange({ do: () => apply(true), undo: () => apply(false) });
   });
   panel.appendChild(addButton);
 
@@ -348,7 +449,7 @@ function buildRow(
   expandedRows: Set<number>,
   spriteGroups: SpriteGroup[] | null,
   rerender: () => void,
-  onChange: () => void,
+  onChange: (command: Command) => void,
   remove: () => void,
   selected: boolean,
   onSelectSingle: (el: BGElement, isChecked: boolean) => void,
@@ -508,19 +609,34 @@ function buildBody(
   spriteGroups: SpriteGroup[] | null,
   summary: HTMLElement,
   rerender: () => void,
-  onChange: () => void,
+  onChange: (command: Command) => void,
 ): void {
   function touch(): void {
     touchedElements.add(el);
   }
 
+  // Scoped to this exact element (never just the bare field name) so a
+  // quick edit to the same field on a *different* element never coalesces
+  // into this one's history entry -- see `elementCoalesceScope`'s own doc
+  // comment.
+  const scope = elementCoalesceScope(el);
+  function coalesceKey(field: string): string {
+    return `elements.${scope}.${field}`;
+  }
+
   body.appendChild(
-    buildTextField("name", "Name", el.name, (value) => {
-      el.name = value;
-      touch();
-      updateSummaryText(summary, el, spriteGroups);
-      onChange();
-    }),
+    buildTextField(
+      "name",
+      "Name",
+      el.name,
+      (value) => {
+        el.name = value;
+        touch();
+        updateSummaryText(summary, el, spriteGroups);
+      },
+      onChange,
+      coalesceKey("name"),
+    ),
   );
 
   const typeSelect = document.createElement("select");
@@ -534,19 +650,22 @@ function buildBody(
   }
   typeSelect.value = el.type;
   typeSelect.addEventListener("change", () => {
-    el.type = typeSelect.value as BGElementType;
-    touch();
-    onChange();
-    rerender();
+    const oldValue = el.type;
+    const newValue = typeSelect.value as BGElementType;
+    if (newValue === oldValue) return;
+    const apply = (value: BGElementType) => {
+      el.type = value;
+      touch();
+      rerender();
+    };
+    apply(newValue);
+    onChange(fieldCommand({ oldValue, newValue, apply }));
   });
   body.appendChild(wrapField("Type", typeSelect));
 
   if (el.type === "normal" || el.type === "parallax") {
     body.appendChild(
-      buildSpritePicker(el, spriteGroups, summary, () => {
-        touch();
-        onChange();
-      }),
+      buildSpritePicker(el, spriteGroups, summary, onChange, () => touch()),
     );
   }
   if (el.type === "anim") {
@@ -558,8 +677,9 @@ function buildBody(
         (v) => {
           el.actionNumber = v;
           touch();
-          onChange();
         },
+        onChange,
+        coalesceKey("actionNumber"),
       ),
     );
   }
@@ -578,60 +698,103 @@ function buildBody(
   }
   layerSelect.value = String(el.layerNo);
   layerSelect.addEventListener("change", () => {
-    el.layerNo = Number(layerSelect.value);
-    touch();
-    updateSummaryText(summary, el, spriteGroups);
-    onChange();
+    const oldValue = el.layerNo;
+    const newValue = Number(layerSelect.value);
+    if (newValue === oldValue) return;
+    const apply = (value: number) => {
+      el.layerNo = value;
+      touch();
+      updateSummaryText(summary, el, spriteGroups);
+      layerSelect.value = String(value);
+    };
+    apply(newValue);
+    onChange(fieldCommand({ oldValue, newValue, apply }));
   });
   body.appendChild(wrapField("Layer", layerSelect));
 
   body.appendChild(
-    buildNumericField("startX", "Start X", el.startX, (v) => {
-      el.startX = v;
-      touch();
-      updateSummaryText(summary, el, spriteGroups);
-      onChange();
-    }),
+    buildNumericField(
+      "startX",
+      "Start X",
+      el.startX,
+      (v) => {
+        el.startX = v;
+        touch();
+        updateSummaryText(summary, el, spriteGroups);
+      },
+      onChange,
+      coalesceKey("startX"),
+    ),
   );
   body.appendChild(
-    buildNumericField("startY", "Start Y", el.startY, (v) => {
-      el.startY = v;
-      touch();
-      updateSummaryText(summary, el, spriteGroups);
-      onChange();
-    }),
+    buildNumericField(
+      "startY",
+      "Start Y",
+      el.startY,
+      (v) => {
+        el.startY = v;
+        touch();
+        updateSummaryText(summary, el, spriteGroups);
+      },
+      onChange,
+      coalesceKey("startY"),
+    ),
   );
 
   if (el.type === "parallax") {
     body.appendChild(
-      buildNumericField("deltaX", "Parallax delta X", el.deltaX, (v) => {
-        el.deltaX = v;
-        touch();
-        onChange();
-      }),
+      buildNumericField(
+        "deltaX",
+        "Parallax delta X",
+        el.deltaX,
+        (v) => {
+          el.deltaX = v;
+          touch();
+        },
+        onChange,
+        coalesceKey("deltaX"),
+      ),
     );
     body.appendChild(
-      buildNumericField("deltaY", "Parallax delta Y", el.deltaY, (v) => {
-        el.deltaY = v;
-        touch();
-        onChange();
-      }),
+      buildNumericField(
+        "deltaY",
+        "Parallax delta Y",
+        el.deltaY,
+        (v) => {
+          el.deltaY = v;
+          touch();
+        },
+        onChange,
+        coalesceKey("deltaY"),
+      ),
     );
   }
 
   body.appendChild(
-    buildNumericField("tileX", "Tile X count", el.tileX, (v) => {
-      el.tileX = v;
-      touch();
-      onChange();
-    }),
+    buildNumericField(
+      "tileX",
+      "Tile X count",
+      el.tileX,
+      (v) => {
+        el.tileX = v;
+        touch();
+      },
+      onChange,
+      coalesceKey("tileX"),
+    ),
   );
   body.appendChild(
-    buildNumericField("tileY", "Tile Y count", el.tileY, (v) => {
-      el.tileY = v;
-      touch();
-      onChange();
-    }),
+    buildNumericField(
+      "tileY",
+      "Tile Y count",
+      el.tileY,
+      (v) => {
+        el.tileY = v;
+        touch();
+      },
+      onChange,
+      coalesceKey("tileY"),
+    ),
   );
   body.appendChild(
     buildNumericField(
@@ -641,8 +804,9 @@ function buildBody(
       (v) => {
         el.tileSpacingX = v;
         touch();
-        onChange();
       },
+      onChange,
+      coalesceKey("tileSpacingX"),
     ),
   );
   body.appendChild(
@@ -653,8 +817,9 @@ function buildBody(
       (v) => {
         el.tileSpacingY = v;
         touch();
-        onChange();
       },
+      onChange,
+      coalesceKey("tileSpacingY"),
     ),
   );
 }
@@ -670,18 +835,42 @@ function wrapField(label: string, control: HTMLElement): HTMLElement {
   return wrapper;
 }
 
+/**
+ * `commit` applies the field-specific domain mutation (and any own summary
+ * text refresh) for a given value; this function wraps it with the
+ * `fieldCommand` do/undo pair and keeps `input`'s own displayed value in
+ * sync on either side (see field-command.ts's own doc comment for why that
+ * happens here, not in `commit`).
+ */
 function buildTextField(
   field: string,
   label: string,
   initialValue: string,
   commit: (value: string) => void,
+  onChange: (command: Command) => void,
+  coalesceKey?: string,
 ): HTMLElement {
   const input = document.createElement("input");
   input.type = "text";
   input.className = "elements-editor__input";
   input.dataset.field = field;
   input.value = initialValue;
-  input.addEventListener("input", () => commit(input.value));
+
+  let currentValue = initialValue;
+
+  input.addEventListener("input", () => {
+    const oldValue = currentValue;
+    const newValue = input.value;
+    if (newValue === oldValue) return;
+    const apply = (value: string) => {
+      commit(value);
+      currentValue = value;
+      if (input.value !== value) input.value = value;
+    };
+    apply(newValue);
+    onChange(fieldCommand({ oldValue, newValue, apply, coalesceKey }));
+  });
+
   return wrapField(label, input);
 }
 
@@ -690,6 +879,8 @@ function buildNumericField(
   label: string,
   initialValue: number,
   commit: (value: number) => void,
+  onChange: (command: Command) => void,
+  coalesceKey?: string,
 ): HTMLElement {
   const input = document.createElement("input");
   input.type = "number";
@@ -701,6 +892,8 @@ function buildNumericField(
   const errorEl = document.createElement("span");
   errorEl.className = "elements-editor__field-error";
   errorEl.hidden = true;
+
+  let currentValue = initialValue;
 
   input.addEventListener("blur", () => {
     const value = Number(input.value);
@@ -714,7 +907,19 @@ function buildNumericField(
     input.classList.remove("is-invalid");
     input.removeAttribute("aria-invalid");
     errorEl.hidden = true;
-    commit(value);
+    const oldValue = currentValue;
+    const newValue = value;
+    if (newValue === oldValue) return;
+    const apply = (v: number) => {
+      commit(v);
+      currentValue = v;
+      input.value = String(v);
+      input.classList.remove("is-invalid");
+      input.removeAttribute("aria-invalid");
+      errorEl.hidden = true;
+    };
+    apply(newValue);
+    onChange(fieldCommand({ oldValue, newValue, apply, coalesceKey }));
   });
 
   const wrapper = wrapField(label, input);
@@ -724,11 +929,18 @@ function buildNumericField(
 
 const UNSET_OPTION_VALUE = "-1,-1";
 
+function spriteRefToOptionValue(ref: SpriteRef): string {
+  return ref.group === -1 && ref.image === -1
+    ? UNSET_OPTION_VALUE
+    : `${ref.group},${ref.image}`;
+}
+
 function buildSpritePicker(
   el: BGElement,
   spriteGroups: SpriteGroup[] | null,
   summary: HTMLElement,
-  onCommit: () => void,
+  onChange: (command: Command) => void,
+  onTouch: () => void,
 ): HTMLElement {
   const select = document.createElement("select");
   select.className = "elements-editor__input";
@@ -782,17 +994,25 @@ function buildSpritePicker(
   }
 
   select.addEventListener("change", () => {
-    if (select.value === UNSET_OPTION_VALUE) {
-      el.sprite = { ...UNSET_SPRITE };
-    } else {
-      const [group, image] = select.value.split(",").map(Number);
-      el.sprite = { group, image };
-    }
-    select.classList.remove("is-invalid");
-    select.removeAttribute("aria-invalid");
-    errorEl.hidden = true;
-    updateSummaryText(summary, el, spriteGroups);
-    onCommit();
+    const oldValue = el.sprite;
+    const newValue: SpriteRef =
+      select.value === UNSET_OPTION_VALUE
+        ? { ...UNSET_SPRITE }
+        : (() => {
+            const [group, image] = select.value.split(",").map(Number);
+            return { group, image };
+          })();
+    const apply = (value: SpriteRef) => {
+      el.sprite = { ...value };
+      onTouch();
+      select.value = spriteRefToOptionValue(value);
+      select.classList.remove("is-invalid");
+      select.removeAttribute("aria-invalid");
+      errorEl.hidden = true;
+      updateSummaryText(summary, el, spriteGroups);
+    };
+    apply(newValue);
+    onChange(fieldCommand({ oldValue, newValue, apply }));
   });
 
   const wrapper = wrapField("Sprite reference", select);

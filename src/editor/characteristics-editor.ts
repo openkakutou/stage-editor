@@ -23,11 +23,27 @@
 // .vibe/glossary.md) — each gets its own visually separate panel, and
 // every field's own label repeats its section ("Camera Left", never a bare
 // "Left") so the two can't be conflated when scanned or tabbed through.
+//
+// Undo/redo (backlog item 008): every commit builds a `fieldCommand`
+// (do/undo pair) and hands it to `onChange` instead of the plain
+// notify-only callback this editor used before — the caller pushes it onto
+// the shared `web-ui-kit` `CommandStack`. Each field's own `apply` closes
+// over its own `input` element, so `do()`/`undo()` can refresh just that
+// one field's display without a full editor rerender — safe to call
+// synchronously from `CommandStack.push` (see field-command.ts). A commit
+// equal to the value already in effect (blurring/typing back to the same
+// value) never pushes anything, per plan consultation — an undo step with
+// no visible effect would be confusing. Each field gets its own
+// `coalesceKey` so rapid edits to one field (typing a name, repeated
+// blur-edits of one number) merge into a single history entry without
+// ever merging across two different fields.
+import type { Command } from "@openkakutou/web-ui-kit";
 import type { StageData } from "../wasm/types.ts";
+import { fieldCommand } from "./field-command.ts";
 
 export interface CharacteristicsEditorOptions {
-  /** Called after any field's edit is committed into `stage`. */
-  onChange?: () => void;
+  /** Called with an undo/redo Command after any field's edit is committed into `stage`. */
+  onChange?: (command: Command) => void;
 }
 
 type TextField = "name" | "author";
@@ -127,7 +143,7 @@ function buildTextField(
   field: TextField,
   label: string,
   stage: StageData,
-  onChange: () => void,
+  onChange: (command: Command) => void,
 ): HTMLElement {
   const wrapper = document.createElement("div");
   wrapper.className = "characteristics-editor__field";
@@ -149,8 +165,15 @@ function buildTextField(
   wrapper.appendChild(input);
 
   input.addEventListener("input", () => {
-    stage[field] = input.value;
-    onChange();
+    const oldValue = stage[field];
+    const newValue = input.value;
+    if (newValue === oldValue) return;
+    const apply = (value: string) => {
+      stage[field] = value;
+      if (input.value !== value) input.value = value;
+    };
+    apply(newValue);
+    onChange(fieldCommand({ oldValue, newValue, apply, coalesceKey: field }));
   });
 
   return wrapper;
@@ -161,7 +184,7 @@ function buildNumericField(
   label: string,
   initialValue: number,
   commit: (value: number) => void,
-  onChange: () => void,
+  onChange: (command: Command) => void,
 ): HTMLElement {
   const wrapper = document.createElement("div");
   wrapper.className = "characteristics-editor__field";
@@ -202,6 +225,8 @@ function buildNumericField(
     errorEl.textContent = message;
   }
 
+  let currentValue = initialValue;
+
   input.addEventListener("blur", () => {
     const value = Number(input.value);
     if (input.value.trim() === "" || Number.isNaN(value)) {
@@ -209,8 +234,17 @@ function buildNumericField(
       return;
     }
     setInvalid(null);
-    commit(value);
-    onChange();
+    const oldValue = currentValue;
+    const newValue = value;
+    if (newValue === oldValue) return;
+    const apply = (v: number) => {
+      commit(v);
+      currentValue = v;
+      input.value = String(v);
+      setInvalid(null);
+    };
+    apply(newValue);
+    onChange(fieldCommand({ oldValue, newValue, apply, coalesceKey: field }));
   });
 
   return wrapper;

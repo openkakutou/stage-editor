@@ -128,4 +128,88 @@ describe("renderCharacteristicsEditor", () => {
     expect(onChange).not.toHaveBeenCalled();
     expect(input.getAttribute("aria-invalid")).toBe("true");
   });
+
+  it("passes a Command whose undo() reverts a text field and whose do() re-applies it", () => {
+    const root = document.createElement("div");
+    const stage = stageWith();
+    let pushed: { do(): void; undo(): void } | undefined;
+
+    renderCharacteristicsEditor(root, stage, {
+      onChange: (command) => {
+        pushed = command;
+      },
+    });
+
+    const input = inputFor(root, "name");
+    input.value = "Renamed Stage";
+    input.dispatchEvent(new Event("input"));
+
+    expect(stage.name).toBe("Renamed Stage");
+    pushed?.undo();
+    expect(stage.name).toBe("Training Room");
+    expect(input.value).toBe("Training Room");
+    pushed?.do();
+    expect(stage.name).toBe("Renamed Stage");
+    expect(input.value).toBe("Renamed Stage");
+  });
+
+  it("passes a Command whose undo() reverts a numeric field and whose do() re-applies it", () => {
+    const root = document.createElement("div");
+    const stage = stageWith();
+    let pushed: { do(): void; undo(): void } | undefined;
+
+    renderCharacteristicsEditor(root, stage, {
+      onChange: (command) => {
+        pushed = command;
+      },
+    });
+
+    const input = inputFor(root, "cameraBounds.left");
+    input.value = "-200";
+    input.dispatchEvent(new Event("blur"));
+
+    expect(stage.cameraBounds.left).toBe(-200);
+    pushed?.undo();
+    expect(stage.cameraBounds.left).toBe(-180);
+    expect(input.value).toBe("-180");
+    pushed?.do();
+    expect(stage.cameraBounds.left).toBe(-200);
+    expect(input.value).toBe("-200");
+  });
+
+  it("does not push a command when a numeric field is blurred with its existing value unchanged", () => {
+    const root = document.createElement("div");
+    const stage = stageWith();
+    const onChange = vi.fn();
+
+    renderCharacteristicsEditor(root, stage, { onChange });
+
+    const input = inputFor(root, "cameraBounds.left");
+    input.value = "-180";
+    input.dispatchEvent(new Event("blur"));
+
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("gives two different fields distinct coalesce keys, so rapid edits to each stay separate history entries", () => {
+    const root = document.createElement("div");
+    const stage = stageWith();
+    const commands: Array<{ coalesceKey?: string }> = [];
+
+    renderCharacteristicsEditor(root, stage, {
+      onChange: (command) => commands.push(command),
+    });
+
+    const nameInput = inputFor(root, "name");
+    nameInput.value = "A";
+    nameInput.dispatchEvent(new Event("input"));
+
+    const authorInput = inputFor(root, "author");
+    authorInput.value = "B";
+    authorInput.dispatchEvent(new Event("input"));
+
+    expect(commands).toHaveLength(2);
+    expect(commands[0].coalesceKey).not.toBe(commands[1].coalesceKey);
+    expect(commands[0].coalesceKey).toBeDefined();
+  });
 });
