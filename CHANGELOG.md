@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-09-08
+
 ### Added
 
 - Save/Export, Undo, Redo, Add BG Element, and a new Delete Selection action all now have a default keyboard shortcut (Ctrl+S, Ctrl+Z, Ctrl+Y, Ctrl+Shift+A, and Delete respectively), shown as a tooltip on each button. A new "Keyboard Shortcuts" panel lets you rebind any of them to a key of your choice — a key already used by another action offers to swap the two instead of silently overwriting it — and your choices are remembered the next time you open the app. Undo, Redo, and Delete Selection defer to normal text-field editing while you're typing in a field.
@@ -64,7 +66,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The app now uses the shared OpenKakutou design system for its layout and visual style, and can load and save a stage file (background, camera, and layer data) through the underlying stage library — the on-screen file loading, editing, and save screens themselves come in later updates.
 
-[Unreleased]: https://github.com/openkakutou/stage-editor/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/openkakutou/stage-editor/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/openkakutou/stage-editor/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/openkakutou/stage-editor/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/openkakutou/stage-editor/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/openkakutou/stage-editor/compare/v0.6.0...v0.7.0
