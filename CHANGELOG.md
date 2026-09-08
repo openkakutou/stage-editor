@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Save/Export, Undo, Redo, Add BG Element, and a new Delete Selection action all now have a default keyboard shortcut (Ctrl+S, Ctrl+Z, Ctrl+Y, Ctrl+Shift+A, and Delete respectively), shown as a tooltip on each button. A new "Keyboard Shortcuts" panel lets you rebind any of them to a key of your choice — a key already used by another action offers to swap the two instead of silently overwriting it — and your choices are remembered the next time you open the app. Undo, Redo, and Delete Selection defer to normal text-field editing while you're typing in a field.
+- Selecting several BG elements and choosing "Delete N selected" removes all of them at once, in a single undoable step — Undo brings them all back together, exactly as they were.
+
 ## [0.9.0] - 2026-09-06
 
 ### Added

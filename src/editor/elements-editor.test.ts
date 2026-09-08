@@ -608,6 +608,186 @@ describe("renderElementsEditor — batch multi-select editing (item 007)", () =>
   });
 });
 
+describe("renderElementsEditor — batch delete selected (item 009)", () => {
+  it("shows a Delete N selected button, labeled with the current count, once a selection exists", () => {
+    const root = document.createElement("div");
+    const stage = stageWith([
+      element({ name: "a" }),
+      element({ name: "b" }),
+      element({ name: "c" }),
+    ]);
+
+    renderElementsEditor(root, stage, oneSpriteGroup, {});
+    checkboxes(root)[0].dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+    checkboxes(root)[1].dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+
+    const deleteButton = root.querySelector<HTMLButtonElement>(
+      '[data-action="delete-selection"]',
+    );
+    expect(deleteButton).not.toBeNull();
+    expect(deleteButton?.textContent).toContain("2");
+  });
+
+  it("clicking Delete selected removes every selected element and hides the toolbar", () => {
+    const root = document.createElement("div");
+    const stage = stageWith([
+      element({ name: "a" }),
+      element({ name: "b" }),
+      element({ name: "c" }),
+    ]);
+
+    renderElementsEditor(root, stage, oneSpriteGroup, {});
+    checkboxes(root)[0].dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+    checkboxes(root)[2].dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+    root
+      .querySelector<HTMLElement>('[data-action="delete-selection"]')
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(stage.elements).toHaveLength(1);
+    expect(stage.elements?.[0].name).toBe("b");
+    expect(root.querySelector(".elements-editor__batch-toolbar")).toBeNull();
+  });
+
+  it("does not require any confirm step — deletion is immediate", () => {
+    const root = document.createElement("div");
+    const stage = stageWith([element({ name: "a" })]);
+
+    renderElementsEditor(root, stage, oneSpriteGroup, {});
+    checkboxes(root)[0].dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+    root
+      .querySelector<HTMLElement>('[data-action="delete-selection"]')
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(
+      root.querySelector('[data-action="confirm-delete-selection"]'),
+    ).toBeNull();
+    expect(stage.elements).toHaveLength(0);
+  });
+
+  it("shows a status message naming how many elements were deleted, mentioning Undo", () => {
+    const root = document.createElement("div");
+    const stage = stageWith([element({ name: "a" }), element({ name: "b" })]);
+
+    renderElementsEditor(root, stage, oneSpriteGroup, {});
+    checkboxes(root)[0].dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+    checkboxes(root)[1].dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+    root
+      .querySelector<HTMLElement>('[data-action="delete-selection"]')
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    const status = root.querySelector('[role="status"]');
+    expect(status?.textContent).toContain("2");
+    expect(status?.textContent).toMatch(/undo/i);
+  });
+
+  it("pushes a single undo/redo Command that restores every removed element together, in original order, on undo", () => {
+    const root = document.createElement("div");
+    const el0 = element({ name: "a" });
+    const el1 = element({ name: "b" });
+    const el2 = element({ name: "c" });
+    const stage = stageWith([el0, el1, el2]);
+    let pushed: { do(): void; undo(): void } | undefined;
+
+    renderElementsEditor(root, stage, oneSpriteGroup, {
+      onChange: (command) => {
+        pushed = command;
+      },
+    });
+    checkboxes(root)[0].dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+    checkboxes(root)[2].dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+    root
+      .querySelector<HTMLElement>('[data-action="delete-selection"]')
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(stage.elements).toEqual([el1]);
+
+    pushed?.undo();
+    expect(stage.elements).toEqual([el0, el1, el2]);
+
+    pushed?.do();
+    expect(stage.elements).toEqual([el1]);
+  });
+
+  it("clicking Delete selected calls onChange", () => {
+    const root = document.createElement("div");
+    const stage = stageWith([element({ name: "a" })]);
+    const onChange = vi.fn();
+
+    renderElementsEditor(root, stage, oneSpriteGroup, { onChange });
+    checkboxes(root)[0].dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+    root
+      .querySelector<HTMLElement>('[data-action="delete-selection"]')
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(onChange).toHaveBeenCalled();
+  });
+});
+
+describe("renderElementsEditor — trigger handle for the keyboard shortcut dispatcher (item 009)", () => {
+  it("returns a handle whose triggerAddElement() does the exact same thing as clicking Add element", () => {
+    const root = document.createElement("div");
+    const stage = stageWith([]);
+
+    const handle = renderElementsEditor(root, stage, oneSpriteGroup, {});
+    handle?.triggerAddElement();
+
+    expect(stage.elements).toHaveLength(1);
+  });
+
+  it("returns a handle whose triggerDeleteSelection() does the exact same thing as clicking Delete selected", () => {
+    const root = document.createElement("div");
+    const stage = stageWith([element({ name: "a" }), element({ name: "b" })]);
+    const selectedElements = new Set<BGElement>();
+    if (stage.elements) selectedElements.add(stage.elements[0]);
+
+    const handle = renderElementsEditor(root, stage, oneSpriteGroup, {
+      selectedElements,
+    });
+    handle?.triggerDeleteSelection();
+
+    expect(stage.elements).toHaveLength(1);
+    expect(stage.elements?.[0].name).toBe("b");
+  });
+
+  it("triggerDeleteSelection() is a no-op when nothing is selected", () => {
+    const root = document.createElement("div");
+    const stage = stageWith([element({ name: "a" })]);
+
+    const handle = renderElementsEditor(root, stage, oneSpriteGroup, {});
+    expect(() => handle?.triggerDeleteSelection()).not.toThrow();
+
+    expect(stage.elements).toHaveLength(1);
+  });
+
+  it("returns undefined when no stage is loaded, so a caller can safely no-op via optional chaining", () => {
+    const root = document.createElement("div");
+
+    const handle = renderElementsEditor(root, null, null, {});
+
+    expect(handle).toBeUndefined();
+  });
+});
+
 type TestCommand = { do(): void; undo(): void; coalesceKey?: string };
 
 describe("renderElementsEditor — undo/redo commands (item 008)", () => {

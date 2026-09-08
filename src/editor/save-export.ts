@@ -55,6 +55,18 @@ export interface SaveExportOptions {
   markStageDocumentSaved?: () => void;
 }
 
+export interface SaveExportHandle {
+  /**
+   * Runs the exact same export this button's own click handler runs — for
+   * a caller that needs to trigger it from outside a click, e.g. the
+   * keyboard shortcut dispatcher (backlog item 009). A no-op when no stage
+   * is loaded, matching the button's own click handler.
+   */
+  triggerSaveExport(): void;
+  /** The rendered button element, for a caller that needs to reflect its live shortcut binding on it (backlog item 009). */
+  button: HTMLElement;
+}
+
 /**
  * Renders a "Save / Export" button into `root`. Reads the currently loaded
  * document fresh on every click (rather than being handed a snapshot),
@@ -66,7 +78,7 @@ export interface SaveExportOptions {
 export function renderSaveExport(
   root: HTMLElement,
   options: SaveExportOptions = {},
-): void {
+): SaveExportHandle {
   root.replaceChildren();
 
   const getStageDocument = options.getStageDocument ?? defaultGetStageDocument;
@@ -83,7 +95,7 @@ export function renderSaveExport(
   status.className = "save-export__status";
   status.setAttribute("role", "status");
 
-  button.addEventListener("click", () => {
+  function triggerSaveExport(): void {
     const doc = getStageDocument();
     if (doc === null) return;
 
@@ -99,7 +111,11 @@ export function renderSaveExport(
         status.textContent = `Saved ${doc.fileName}.`;
       },
     );
-  });
+  }
+
+  button.addEventListener("click", triggerSaveExport);
 
   root.append(button, status);
+
+  return { triggerSaveExport, button };
 }

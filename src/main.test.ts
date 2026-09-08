@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   commandStack,
   resetCommandStackForTests,
@@ -11,6 +11,7 @@ import {
   resetStageDocumentForTests,
 } from "./document/stage-document-store.ts";
 import { renderApp } from "./main.ts";
+import { appShortcutManager } from "./shortcuts/app-shortcut-manager.ts";
 import { resetWasmBridgeForTests } from "./wasm/bridge.ts";
 import type { WasmBridgeOptions } from "./wasm/bridge.ts";
 
@@ -335,3 +336,311 @@ describe("renderApp — undo/redo integration (backlog item 008)", () => {
     vi.restoreAllMocks();
   });
 });
+
+function checkboxes(root: HTMLElement): HTMLInputElement[] {
+  return Array.from(root.querySelectorAll('[data-action="select-element"]'));
+}
+
+function dispatchShortcut(
+  target: EventTarget,
+  init: { key: string; ctrlKey?: boolean; shiftKey?: boolean },
+): void {
+  target.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: init.key,
+      ctrlKey: init.ctrlKey ?? false,
+      shiftKey: init.shiftKey ?? false,
+      bubbles: true,
+      cancelable: true,
+    }),
+  );
+}
+
+describe("renderApp — keyboard shortcuts wiring (backlog item 009)", () => {
+  beforeEachResets();
+
+  it("Ctrl+S triggers the same save/export flow as clicking the button", () => {
+    // Suppresses jsdom's own "navigation not implemented" console noise
+    // from the real (unmocked) WASM save's eventual `<a>` download click --
+    // it settles asynchronously, after this test's own assertion already
+    // ran, so the spy is deliberately never restored (this test's own
+    // click, and any leftover async one, both land on it for the rest of
+    // the suite). `renderApp` has no injection point for save-export's own
+    // dependencies (that path is covered directly by save-export.test.ts),
+    // so this test only asserts the synchronous "Saving…" status update,
+    // never awaiting the async part.
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    resetStageDocumentForTests();
+    const root = document.createElement("div");
+    renderApp(root, "0.1.0");
+    blankStageButton(root).click();
+
+    dispatchShortcut(window, { key: "s", ctrlKey: true });
+
+    // Set synchronously at the very top of the shared triggerSaveExport(),
+    // before its own async WASM call resolves -- proves the shortcut ran
+    // the exact same code path as a real click.
+    expect(root.querySelector(".save-export__status")?.textContent).toBe(
+      "Saving…",
+    );
+  });
+
+  it("Ctrl+Z triggers Undo and Ctrl+Y triggers Redo on the shared toolbar controls", () => {
+    resetStageDocumentForTests();
+    resetCommandStackForTests();
+    const root = document.createElement("div");
+    renderApp(root, "0.1.0");
+    blankStageButton(root).click();
+    const nameInput = root.querySelector<HTMLInputElement>(
+      "#characteristics-editor-name",
+    );
+    if (!nameInput) throw new Error("no name input");
+    nameInput.value = "Renamed";
+    nameInput.dispatchEvent(new Event("input"));
+    expect(getStageDocument()?.stage.name).toBe("Renamed");
+
+    dispatchShortcut(window, { key: "z", ctrlKey: true });
+    expect(getStageDocument()?.stage.name).toBe("New Stage");
+
+    dispatchShortcut(window, { key: "y", ctrlKey: true });
+    expect(getStageDocument()?.stage.name).toBe("Renamed");
+  });
+
+  it("Ctrl+Z does not run the document Undo while focus is inside a text field, leaving native field-undo alone", () => {
+    resetStageDocumentForTests();
+    resetCommandStackForTests();
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+    renderApp(root, "0.1.0");
+    blankStageButton(root).click();
+    const nameInput = root.querySelector<HTMLInputElement>(
+      "#characteristics-editor-name",
+    );
+    if (!nameInput) throw new Error("no name input");
+    nameInput.value = "Renamed";
+    nameInput.dispatchEvent(new Event("input"));
+
+    dispatchShortcut(nameInput, { key: "z", ctrlKey: true });
+
+    expect(getStageDocument()?.stage.name).toBe("Renamed");
+    root.remove();
+  });
+
+  it("Ctrl+Shift+A triggers Add BG Element, the same as clicking the Add element button", () => {
+    resetStageDocumentForTests();
+    resetCommandStackForTests();
+    const root = document.createElement("div");
+    renderApp(root, "0.1.0");
+    blankStageButton(root).click();
+
+    dispatchShortcut(window, { key: "a", ctrlKey: true, shiftKey: true });
+
+    expect(getStageDocument()?.stage.elements).toHaveLength(1);
+  });
+
+  it("Delete triggers Delete Selection for the currently selected BG elements", () => {
+    resetStageDocumentForTests();
+    resetCommandStackForTests();
+    const root = document.createElement("div");
+    renderApp(root, "0.1.0");
+    blankStageButton(root).click();
+    root
+      .querySelector<HTMLElement>('[data-action="add-element"]')
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    checkboxes(root)[0].dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+    expect(getStageDocument()?.stage.elements).toHaveLength(1);
+
+    dispatchShortcut(window, { key: "Delete" });
+
+    expect(getStageDocument()?.stage.elements).toHaveLength(0);
+  });
+
+  it("Delete does nothing while focus is inside a text field", () => {
+    resetStageDocumentForTests();
+    resetCommandStackForTests();
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+    renderApp(root, "0.1.0");
+    blankStageButton(root).click();
+    root
+      .querySelector<HTMLElement>('[data-action="add-element"]')
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    checkboxes(root)[0].dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+    const nameInput = root.querySelector<HTMLInputElement>(
+      "#characteristics-editor-name",
+    );
+    if (!nameInput) throw new Error("no name input");
+
+    dispatchShortcut(nameInput, { key: "Delete" });
+
+    expect(getStageDocument()?.stage.elements).toHaveLength(1);
+    root.remove();
+  });
+
+  it("does nothing for a key combo bound to no action", () => {
+    resetStageDocumentForTests();
+    const root = document.createElement("div");
+    renderApp(root, "0.1.0");
+
+    expect(() =>
+      dispatchShortcut(window, { key: "k", ctrlKey: true }),
+    ).not.toThrow();
+  });
+
+  it("does not accumulate keydown listeners across repeated renders", () => {
+    resetStageDocumentForTests();
+    resetCommandStackForTests();
+    const root = document.createElement("div");
+    renderApp(root, "0.1.0");
+    renderApp(root, "0.1.0");
+    blankStageButton(root).click();
+    const nameInput = root.querySelector<HTMLInputElement>(
+      "#characteristics-editor-name",
+    );
+    if (!nameInput) throw new Error("no name input");
+    // Two edits of *different kinds* (a field commit, then a structural
+    // add) deliberately, not two same-field edits — those would coalesce
+    // into a single history entry regardless of listener count, which
+    // would defeat what this test is actually checking.
+    nameInput.value = "AAA";
+    nameInput.dispatchEvent(new Event("input"));
+    root
+      .querySelector<HTMLElement>('[data-action="add-element"]')
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(getStageDocument()?.stage.elements).toHaveLength(1);
+
+    dispatchShortcut(window, { key: "z", ctrlKey: true });
+
+    // A single Ctrl+Z should undo only the most recent action (adding the
+    // element). If a stale listener from the first render were still
+    // attached, this one keydown would fire the handler twice and undo
+    // both actions in one press.
+    expect(getStageDocument()?.stage.elements).toHaveLength(0);
+    expect(getStageDocument()?.stage.name).toBe("AAA");
+  });
+});
+
+describe("renderApp — shortcuts panel and discoverability (backlog item 009)", () => {
+  beforeEachResets();
+
+  it("mounts the shared shortcuts panel, fed this app's own manager", () => {
+    resetStageDocumentForTests();
+    const root = document.createElement("div");
+
+    renderApp(root, "0.1.0");
+
+    const panelEl = root.querySelector("wuik-shortcuts-panel");
+    expect(panelEl).not.toBeNull();
+    // biome-ignore lint/suspicious/noExplicitAny: reading a custom element's own JS property, not part of any typed DOM interface.
+    expect((panelEl as any).manager).toBe(appShortcutManager);
+  });
+
+  it("shows each action's current shortcut on its own button as a title/aria-keyshortcuts hint", () => {
+    resetStageDocumentForTests();
+    const root = document.createElement("div");
+    renderApp(root, "0.1.0");
+    blankStageButton(root).click();
+
+    const saveExportButton = root.querySelector<HTMLElement>(
+      '[data-action="save-export"]',
+    );
+    const toolbar = root.querySelector('[slot="toolbar"]');
+    const undoButtonEl = toolbar?.querySelector<HTMLElement>(
+      '[data-action="undo"]',
+    );
+    const addElementButton = root.querySelector<HTMLElement>(
+      '[data-action="add-element"]',
+    );
+    expect(saveExportButton?.title).toBe("Save / Export (Ctrl+S)");
+    expect(saveExportButton?.getAttribute("aria-keyshortcuts")).toBe("Ctrl+S");
+    expect(undoButtonEl?.title).toBe("Undo (Ctrl+Z)");
+    expect(addElementButton?.title).toBe("Add BG Element (Ctrl+Shift+A)");
+  });
+
+  it("updates a button's shortcut hint live when the shared manager rebinds its action", () => {
+    resetStageDocumentForTests();
+    const root = document.createElement("div");
+    renderApp(root, "0.1.0");
+    blankStageButton(root).click();
+
+    appShortcutManager.rebind("save-export", "Ctrl+E");
+
+    const saveExportButton = root.querySelector<HTMLElement>(
+      '[data-action="save-export"]',
+    );
+    expect(saveExportButton?.title).toBe("Save / Export (Ctrl+E)");
+  });
+
+  it("keeps the Add BG Element shortcut hint on the button across a structural rerender triggered by the editor's own internal action, not just the initial mount", () => {
+    // Regression test: unlike Save/Export or Undo/Redo, the "Add element"
+    // button is recreated by elements-editor.ts's own internal `rerender()`
+    // closure on every structural change (add, remove, type switch, a
+    // batch apply/delete) -- a path that bypasses `renderApp`'s own
+    // `rerenderElements` wrapper entirely. A rebind that only ran from that
+    // wrapper would leave the hint stale/empty after the very first such
+    // action.
+    resetStageDocumentForTests();
+    resetCommandStackForTests();
+    const root = document.createElement("div");
+    renderApp(root, "0.1.0");
+    blankStageButton(root).click();
+
+    root
+      .querySelector<HTMLElement>('[data-action="add-element"]')
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    root
+      .querySelector<HTMLElement>('[data-action="add-element"]')
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    const addElementButton = root.querySelector<HTMLElement>(
+      '[data-action="add-element"]',
+    );
+    expect(addElementButton?.title).toBe("Add BG Element (Ctrl+Shift+A)");
+  });
+
+  it("unsubscribes the previous render's toolbar button bindings from the shared manager before adding new ones", () => {
+    resetStageDocumentForTests();
+    const addSpy = vi.spyOn(appShortcutManager, "addEventListener");
+    const removeSpy = vi.spyOn(appShortcutManager, "removeEventListener");
+    const root = document.createElement("div");
+
+    renderApp(root, "0.1.0");
+    const addedByFirstRender = addSpy.mock.calls.length;
+    const removedBeforeSecondRender = removeSpy.mock.calls.length;
+    expect(addedByFirstRender).toBeGreaterThan(0);
+
+    renderApp(root, "0.1.0");
+
+    const removedBySecondRenderCleanup =
+      removeSpy.mock.calls.length - removedBeforeSecondRender;
+    expect(removedBySecondRenderCleanup).toBe(addedByFirstRender);
+
+    addSpy.mockRestore();
+    removeSpy.mockRestore();
+  });
+});
+
+/** Shared `beforeEach` for the two describe blocks above -- a tiny local helper so it isn't repeated twice. */
+function beforeEachResets(): void {
+  beforeEach(() => {
+    resetStageDocumentForTests();
+    resetCommandStackForTests();
+    // `appShortcutManager` is a real, long-lived singleton (persisted to the
+    // real localStorage) -- reset any rebind a previous test may have left
+    // behind so tests here don't leak into each other.
+    for (const id of [
+      "save-export",
+      "undo",
+      "redo",
+      "add-element",
+      "delete-selection",
+    ]) {
+      appShortcutManager.resetToDefault(id);
+    }
+    globalThis.localStorage.clear();
+  });
+}

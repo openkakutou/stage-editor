@@ -331,6 +331,29 @@
 }
 
 /*
+ * Batch delete selected (backlog item 009). Pushed to the far end of the
+ * toolbar with a divider, so the `danger`-variant, no-confirm-step button
+ * doesn't read as just another equally-safe batch action alongside Clear
+ * selection/Apply offset/Apply sprite -- see
+ * .vibe/decisions/007-remappable-shortcuts-actions-and-batch-delete-design.md.
+ */
+.elements-editor__batch-danger {
+  margin-inline-start: auto;
+  padding-inline-start: var(--wuik-space-3);
+  border-inline-start: 1px solid var(--wuik-color-border);
+}
+
+.elements-editor__deletion-status {
+  margin: 0 0 var(--wuik-space-2);
+  font-size: var(--wuik-font-size-sm);
+  color: var(--wuik-color-text-secondary);
+}
+
+.elements-editor__deletion-status:empty {
+  display: none;
+}
+
+/*
  * 3D model editor (backlog item 006). Field/label/input shape reuses the
  * `.characteristics-editor__*` stopgap convention verbatim (same still-
  * missing generic text-input component gap). Model Placement and 3D

@@ -193,3 +193,50 @@ describe("renderSaveExport", () => {
     expect(triggerDownload).not.toHaveBeenCalled();
   });
 });
+
+describe("renderSaveExport — trigger handle for the keyboard shortcut dispatcher (item 009)", () => {
+  it("returns a handle exposing the rendered button", () => {
+    const root = document.createElement("div");
+
+    const handle = renderSaveExport(root, {
+      getStageDocument: () => document_(),
+    });
+
+    expect(handle.button).toBe(
+      root.querySelector('[data-action="save-export"]'),
+    );
+  });
+
+  it("triggerSaveExport() does the exact same thing as clicking the button", async () => {
+    const root = document.createElement("div");
+    const saveStage = vi
+      .fn()
+      .mockResolvedValue({ ok: true, bytes: new Uint8Array() } as SaveResult);
+    const triggerDownload = vi.fn();
+
+    const handle = renderSaveExport(root, {
+      getStageDocument: () => document_({ fileName: "arena.def" }),
+      saveStage,
+      triggerDownload,
+    });
+    handle.triggerSaveExport();
+
+    await vi.waitFor(() => {
+      expect(triggerDownload).toHaveBeenCalled();
+    });
+    expect(triggerDownload.mock.calls[0][1]).toBe("arena.def");
+  });
+
+  it("triggerSaveExport() does nothing when no stage is loaded", () => {
+    const root = document.createElement("div");
+    const saveStage = vi.fn();
+
+    const handle = renderSaveExport(root, {
+      getStageDocument: () => null,
+      saveStage,
+    });
+
+    expect(() => handle.triggerSaveExport()).not.toThrow();
+    expect(saveStage).not.toHaveBeenCalled();
+  });
+});

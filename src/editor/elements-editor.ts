@@ -64,6 +64,23 @@ import {
 } from "./bg-element-batch-edit.ts";
 import { fieldCommand } from "./field-command.ts";
 
+export interface ElementsEditorHandle {
+  /**
+   * Runs the exact same action the "Add element" button's own click handler
+   * runs — for a caller that needs to trigger it from outside a click, e.g.
+   * the keyboard shortcut dispatcher (backlog item 009).
+   */
+  triggerAddElement: () => void;
+  /**
+   * Runs the exact same batch delete the "Delete selected" button's own
+   * click handler runs. A no-op (nothing to delete, no `onChange`/rerender)
+   * when the selection is currently empty — matching the button itself only
+   * ever being reachable while the selection is non-empty. See
+   * `.vibe/decisions/007-remappable-shortcuts-actions-and-batch-delete-design.md`.
+   */
+  triggerDeleteSelection: () => void;
+}
+
 export interface ElementsEditorOptions {
   /**
    * Which rows are expanded, by index into `stage.elements`. The caller
@@ -82,6 +99,18 @@ export interface ElementsEditorOptions {
    * `.vibe/decisions/005-bg-element-batch-selection-model-and-scope.md`.
    */
   selectedElements?: Set<BGElement>;
+  /**
+   * A one-slot mutable box holding the status text shown after a batch
+   * delete (backlog item 009, e.g. "Deleted 3 elements. Use Undo to
+   * restore.") so it survives the `rerender()` a delete itself triggers —
+   * same "caller passes the same instance across re-renders" convention
+   * `expandedRows`/`selectedElements` already use above. `text: null`
+   * renders nothing. A fresh box is used if omitted (meaning the message
+   * cannot survive a caller-triggered re-render — fine for a one-off call,
+   * not for a caller that re-renders this editor from elsewhere, e.g.
+   * `main.ts`).
+   */
+  deletionStatus?: { text: string | null };
   /** Called with an undo/redo Command after any committed edit — add, remove, a field change, a type switch, or a batch apply (backlog item 008). */
   onChange?: (command: Command) => void;
 }
@@ -167,9 +196,9 @@ export function renderElementsEditor(
   stage: StageData | null,
   spriteGroups: SpriteGroup[] | null,
   options: ElementsEditorOptions = {},
-): void {
+): ElementsEditorHandle | undefined {
   root.replaceChildren();
-  if (stage === null) return;
+  if (stage === null) return undefined;
   // Captured as its own binding (not just narrowed) so nested closures below
   // keep the non-null type — TS narrowing from the early return above
   // doesn't survive into a closure over the wider-typed parameter.
@@ -177,6 +206,7 @@ export function renderElementsEditor(
 
   const expandedRows = options.expandedRows ?? new Set<number>();
   const selectedElements = options.selectedElements ?? new Set<BGElement>();
+  const deletionStatus = options.deletionStatus ?? { text: null };
   const onChange = options.onChange ?? (() => {});
 
   const panel = document.createElement("wuik-panel");
@@ -191,6 +221,7 @@ export function renderElementsEditor(
     renderElementsEditor(root, stage, spriteGroups, {
       expandedRows,
       selectedElements,
+      deletionStatus,
       onChange,
     });
   }
@@ -198,6 +229,13 @@ export function renderElementsEditor(
   const heading = document.createElement("h2");
   heading.textContent = `BG Elements (${elements().length})`;
   panel.appendChild(heading);
+
+  const deletionStatusEl = document.createElement("p");
+  deletionStatusEl.className = "elements-editor__deletion-status";
+  deletionStatusEl.setAttribute("role", "status");
+  deletionStatusEl.setAttribute("aria-live", "polite");
+  deletionStatusEl.textContent = deletionStatus.text ?? "";
+  panel.appendChild(deletionStatusEl);
 
   const toolbarContainer = document.createElement("div");
   panel.appendChild(toolbarContainer);
@@ -232,7 +270,9 @@ export function renderElementsEditor(
         }
         refreshBatchToolbar();
       },
+      onDeleteSelection: performDeleteSelection,
       onApplyOffset: (deltaX, deltaY) => {
+        deletionStatus.text = null;
         // A single undo step for the whole batch (backlog item 008,
         // acceptance criteria). `do()`/`undo()` replay from each affected
         // element's own snapshotted *original* position to a precomputed
@@ -276,6 +316,7 @@ export function renderElementsEditor(
         });
       },
       onApplySprite: (sprite) => {
+        deletionStatus.text = null;
         // A single undo step for the whole batch. Unlike the offset above,
         // a sprite reassignment overwrites uniformly, so each affected
         // element's own *previous* sprite (not necessarily the same as any
@@ -300,6 +341,75 @@ export function renderElementsEditor(
         onChange({ do: applyNew, undo: applyOld });
       },
     });
+  }
+
+  /**
+   * Batch delete selected (backlog item 009): removes every currently
+   * selected element in one step, with a single undo/redo Command for the
+   * whole batch — deliberately no confirm step of its own, per
+   * `.vibe/decisions/007-remappable-shortcuts-actions-and-batch-delete-design.md`
+   * (this app's own Undo, now also reachable via Ctrl+Z, is the safety
+   * net). A no-op when the selection is empty, mirroring the button itself
+   * only ever being reachable while the selection is non-empty — this also
+   * makes it safe for the keyboard shortcut dispatcher to call
+   * unconditionally.
+   *
+   * Mirrors the per-row `remove` closure's own `apply(present)` shape
+   * below, generalized over every selected element at once: each removed
+   * element's original index, expanded-row state, and "was the last
+   * individually clicked row" state is snapshotted up front so undo can
+   * restore all three, not just the element itself. `meta` is sorted
+   * ascending by original index so restoring (splicing each element back in
+   * at its own `index`, in that order) always lands correctly — a lower
+   * index is always re-inserted before a higher one is revisited, so it
+   * never shifts a later insertion point out from under itself.
+   */
+  function performDeleteSelection(): void {
+    const indices = selectedElementIndices(elements(), selectedElements);
+    if (indices.size === 0) return;
+
+    const meta = Array.from(indices)
+      .sort((a, b) => a - b)
+      .map((index) => ({
+        index,
+        element: elements()[index],
+        wasExpanded: expandedRows.has(index),
+        wasLastClicked: lastClickedElement === elements()[index],
+      }))
+      .filter(
+        (
+          m,
+        ): m is typeof m & {
+          element: BGElement;
+        } => m.element !== undefined,
+      );
+
+    const apply = (present: boolean) => {
+      if (present) {
+        for (const m of meta) {
+          if (!elements().includes(m.element)) {
+            elements().splice(m.index, 0, m.element);
+          }
+          selectedElements.add(m.element);
+          if (m.wasExpanded) expandedRows.add(m.index);
+          if (m.wasLastClicked) lastClickedElement = m.element;
+        }
+        deletionStatus.text = null;
+      } else {
+        for (const m of meta) {
+          const currentIndex = elements().indexOf(m.element);
+          if (currentIndex !== -1) elements().splice(currentIndex, 1);
+          expandedRows.delete(m.index);
+          selectedElements.delete(m.element);
+          if (lastClickedElement === m.element) lastClickedElement = null;
+        }
+        deletionStatus.text = `Deleted ${meta.length} element${meta.length === 1 ? "" : "s"}. Use Undo to restore.`;
+      }
+      rerender();
+    };
+
+    apply(false);
+    onChange({ do: () => apply(false), undo: () => apply(true) });
   }
 
   /**
@@ -362,6 +472,7 @@ export function renderElementsEditor(
   list.className = "elements-editor__list";
   elements().forEach((el, index) => {
     const remove = () => {
+      deletionStatus.text = null;
       const wasExpanded = expandedRows.has(index);
       const wasSelected = selectedElements.has(el);
       const wasLastClicked = lastClickedElement === el;
@@ -402,11 +513,14 @@ export function renderElementsEditor(
 
   refreshBatchToolbar();
 
-  const addButton = document.createElement("wuik-button");
-  addButton.setAttribute("variant", "secondary");
-  addButton.dataset.action = "add-element";
-  addButton.textContent = "Add element";
-  addButton.addEventListener("click", () => {
+  /**
+   * Runs "Add element" — pulled out as its own named function (rather than
+   * an inline click listener) so it can also be exposed on this render's
+   * returned handle for the keyboard shortcut dispatcher (backlog item 009)
+   * to call, the exact same code path a real click runs.
+   */
+  function triggerAddElement(): void {
+    deletionStatus.text = null;
     const el = blankElement();
     const insertIndex = elements().length;
     const apply = (present: boolean) => {
@@ -424,10 +538,18 @@ export function renderElementsEditor(
     };
     apply(true);
     onChange({ do: () => apply(true), undo: () => apply(false) });
-  });
+  }
+
+  const addButton = document.createElement("wuik-button");
+  addButton.setAttribute("variant", "secondary");
+  addButton.dataset.action = "add-element";
+  addButton.textContent = "Add element";
+  addButton.addEventListener("click", triggerAddElement);
   panel.appendChild(addButton);
 
   root.appendChild(panel);
+
+  return { triggerAddElement, triggerDeleteSelection: performDeleteSelection };
 }
 
 /** Resolves the selection's current array indices, freshly, against `elements` -- never stale, since selection is tracked by object reference. */
@@ -1028,6 +1150,7 @@ interface BatchToolbarOptions {
   spriteGroups: SpriteGroup[] | null;
   selectedElements: ReadonlySet<BGElement>;
   onClearSelection: () => void;
+  onDeleteSelection: () => void;
   onApplyOffset: (deltaX: number, deltaY: number) => void;
   onApplySprite: (sprite: SpriteRef) => void;
 }
@@ -1069,6 +1192,21 @@ function renderBatchToolbar(
   toolbar.appendChild(
     buildBatchSpriteControl(spriteGroups, options.onApplySprite),
   );
+
+  // Visually separated (pushed to the end, with a divider) from the three
+  // non-destructive actions above per plan consultation and
+  // .vibe/decisions/007-remappable-shortcuts-actions-and-batch-delete-design.md
+  // -- a `danger`-variant button with no confirm step of its own shouldn't
+  // read as just another equally-safe batch action.
+  const deleteWrapper = document.createElement("div");
+  deleteWrapper.className = "elements-editor__batch-danger";
+  const deleteButton = document.createElement("wuik-button");
+  deleteButton.setAttribute("variant", "danger");
+  deleteButton.dataset.action = "delete-selection";
+  deleteButton.textContent = `Delete ${selectedElements.size} selected`;
+  deleteButton.addEventListener("click", options.onDeleteSelection);
+  deleteWrapper.appendChild(deleteButton);
+  toolbar.appendChild(deleteWrapper);
 
   root.appendChild(toolbar);
 }

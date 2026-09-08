@@ -17,11 +17,13 @@ flowchart LR
     app["app\n(src/main.ts)"] --> input["input\n(src/input/)"]
     app --> wizard["wizard\n(src/wizard/)"]
     app --> editor["editor\n(src/editor/)"]
+    app --> shortcuts["shortcuts\n(src/shortcuts/)"]
     input --> wasm["wasm\n(src/wasm/)"]
     input --> document["document\n(src/document/)"]
     wizard --> document
     editor --> wasm
     editor --> document
+    shortcuts -.->|"ShortcutManager,\n<wuik-shortcuts-panel>"| wuikKit["@openkakutou/web-ui-kit"]
     wasm -.->|fetch + WebAssembly.instantiate| module["stage.wasm\n(public/wasm/, gitignored)"]
     editor -.->|fetch + WebAssembly.instantiate| sffModule["sff.wasm\n(public/wasm/sff/, gitignored)"]
     editor -.->|dynamic import, only once a 3D\nmodel is actually assigned| three["three (npm)"]
@@ -31,6 +33,7 @@ flowchart LR
     style module stroke-dasharray: 5 5
     style sffModule stroke-dasharray: 5 5
     style three stroke-dasharray: 5 5
+    style wuikKit stroke-dasharray: 5 5
 ```
 
 - **`app`** (`src/main.ts`, `src/version.ts`, `src/style.css`) — the entry
@@ -38,14 +41,17 @@ flowchart LR
   app shell, a toolbar (app title + version, plus Undo/Redo buttons —
   backlog item 008) plus the stage file input, the New Stage Wizard
   (backlog item 005), the characteristics editor, the BG element editor,
-  and the Save/Export button as main content. A loaded file and a
-  wizard-created stage both funnel into the same `mountDocument` wiring,
-  so the editors appear the same way regardless of entry point; a
-  wizard-driven creation additionally moves focus into the characteristics
-  editor's first field, since the wizard has no second confirm screen of
-  its own to give that positive feedback. `mountDocument` also clears the
-  shared undo/redo history before storing the new document — see "Undo/redo"
-  below. No sidebar/tabs slotted yet.
+  the Save/Export button, and the Keyboard Shortcuts panel (backlog item
+  009) as main content. A loaded file and a wizard-created stage both
+  funnel into the same `mountDocument` wiring, so the editors appear the
+  same way regardless of entry point; a wizard-driven creation
+  additionally moves focus into the characteristics editor's first field,
+  since the wizard has no second confirm screen of its own to give that
+  positive feedback. `mountDocument` also clears the shared undo/redo
+  history before storing the new document — see "Undo/redo" below. `app`
+  also owns the single `window` `keydown` listener that dispatches every
+  registered shortcut — see "Keyboard shortcuts" below. No sidebar/tabs
+  slotted yet.
 - **`input`** (`src/input/`) — the stage folder input (backlog item 002).
   `folder-entries.ts` gathers files from a folder selection or a
   drag-and-drop. `stage-file-input.ts` picks which gathered file is the
@@ -256,6 +262,20 @@ reassignment" bullet.
   has a real value to apply (a non-zero offset, or an actually-chosen
   sprite) — a batch action's scope stays self-evident before it commits,
   and it's undoable as a single step regardless (see "Undo/redo" below).
+- **Delete selected (backlog item 009):** a `variant="danger"` "Delete N
+  selected" button sits at the end of the batch toolbar, visually
+  separated (pushed right, with a divider) from the three non-destructive
+  actions above it. Deletion is instant — no confirm step of its own,
+  unlike the single-row Remove control — relying instead on this app's own
+  Undo (a stronger safety net a single-row delete didn't have when its own
+  confirm step was designed) as the recovery path; an inline status
+  message ("Deleted N elements. Use Undo to restore.") gives a visible
+  recovery cue afterward. `performDeleteSelection`
+  (`elements-editor.ts`) generalizes the single-row `remove` closure's own
+  snapshot/restore shape over every selected element at once, so a single
+  undo/redo `Command` restores them all together, at their original
+  indices, with their prior expanded/selected state. See
+  `.vibe/decisions/007-remappable-shortcuts-actions-and-batch-delete-design.md`.
 - **Checkbox activation quirk (real-browser-only, not jsdom-testable):**
   calling `preventDefault()` on a checkbox's `click` event — whether
   triggered by a mouse click or a Space keypress — reverts `.checked`
@@ -312,10 +332,63 @@ or redo, since the stack itself has no change event to subscribe to.
   real-browser verification.
 - The stack is cleared whenever a document loads or a new one is
   created (`app`'s `mountDocument`) — undo/redo only ever applies to the
-  currently loaded document, never across a swap. The keyboard-shortcut
-  reachability path is deferred until this app adopts a shared shortcut
-  manager (backlog item 009); only the toolbar-button path ships now. See
-  `.vibe/decisions/006-undo-redo-scoped-to-current-document-shortcut-deferred.md`.
+  currently loaded document, never across a swap. See
+  `.vibe/decisions/006-undo-redo-scoped-to-current-document-shortcut-deferred.md`
+  for why the toolbar-button path shipped first, and "Keyboard shortcuts"
+  below for the shortcut path that followed it.
+
+## Keyboard shortcuts (backlog item 009)
+
+`src/shortcuts/` wires this app's actions through `@openkakutou/web-ui-kit`'s
+shared, headless `ShortcutManager` and its `<wuik-shortcuts-panel>` UI,
+instead of hardcoded key handlers — the same shape `lifebar-editor` already
+established for its own equivalent item, ported and extended here with the
+two actions that repo didn't have (Add BG Element, Delete Selection). See
+`.vibe/decisions/007-remappable-shortcuts-actions-and-batch-delete-design.md`
+for the default keys and the design calls specific to this app.
+
+- `app-shortcuts.ts` declares the five registered actions (`APP_SHORTCUT_ACTIONS`)
+  and `handleAppShortcutKeydown`, which resolves a live `keydown` event
+  against the manager's *current* bindings (default or user-rebound) and
+  calls the matching handler. Undo, Redo, and Delete Selection defer to
+  native in-field editing (`isEditableTarget`) while focus is inside a
+  genuine text-entry control — deliberately narrower than a plain "is this
+  an `<input>`" check, since a checkbox must not count as editable: the
+  primary keyboard flow for Delete Selection is check a row, then press
+  Delete, and the checkbox is exactly where focus sits at that moment.
+  Save/Export and Add BG Element always fire regardless of focus, since
+  neither key has a native in-field meaning to preserve. The dispatcher
+  also no-ops on an already-`preventDefault()`-ed event — caught during
+  real-browser verification: `<wuik-shortcuts-panel>`'s own rebind-capture
+  prevents default on every key it captures but never stops propagation,
+  so without this guard the very keystroke that rebinds an action would
+  also immediately re-fire whatever now owns that key.
+- `app-shortcut-manager.ts` holds the single module-level `ShortcutManager`
+  singleton (`appShortcutManager`), persisting overrides under this app's
+  own `localStorage` key so a rebind survives a reload without leaking
+  into another OpenKakutou app on the same origin.
+- `shortcut-label.ts`'s `bindShortcutLabel` keeps a button's `title`
+  tooltip and `aria-keyshortcuts` attribute live-synced to an action's
+  current binding — used for Save/Export, Undo, Redo, and Add BG Element.
+  Unlike the other three (created once and never replaced), the "Add
+  element" button is recreated by `elements-editor.ts`'s own internal
+  `rerender()` on every structural change, a path that bypasses `app`'s
+  own rerender wrapper entirely — `app` therefore rebinds this one label
+  from two places: after its own wrapper's render call, and again from the
+  `onChange` callback `elements-editor.ts` invokes after every committed
+  edit, so the hint never goes stale after the very first add/remove/type
+  switch/batch action.
+- `shortcuts-panel-section.ts` wraps `<wuik-shortcuts-panel>` in a
+  collapsible section, starting **expanded** (unlike this app's other
+  collapsible content) since it's the only place this feature can be
+  discovered at all; it sits at the very bottom of the main content, after
+  Save/Export, so it doesn't push more load-bearing content down the page
+  on first paint.
+- `app` owns the single `window`-level `keydown` listener for the whole
+  app, torn down and re-attached on every `renderApp` call (the same
+  "replace, don't accumulate" contract `renderApp` already gives its own
+  DOM content) so a repeated call never fires a handler twice for one
+  keypress.
 
 ## Data flow: saving a stage
 

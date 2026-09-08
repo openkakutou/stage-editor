@@ -1,16 +1,23 @@
 import "@openkakutou/web-ui-kit/tokens.css";
 import "@openkakutou/web-ui-kit";
 import "./style.css";
+import type { WuikShortcutsPanelElement } from "@openkakutou/web-ui-kit";
 import { commandStack } from "./document/command-stack-store.ts";
 import type { StageDocument } from "./document/stage-document-store.ts";
 import { setStageDocument } from "./document/stage-document-store.ts";
 import { renderCharacteristicsEditor } from "./editor/characteristics-editor.ts";
+import type { ElementsEditorHandle } from "./editor/elements-editor.ts";
 import { renderElementsEditor } from "./editor/elements-editor.ts";
 import { renderModelEditor } from "./editor/model-editor.ts";
+import type { SaveExportHandle } from "./editor/save-export.ts";
 import { renderSaveExport } from "./editor/save-export.ts";
 import { renderUndoRedoControls } from "./editor/undo-redo-controls.ts";
 import { renderStageFileInput } from "./input/stage-file-input-view.ts";
 import type { StageFolderInputOptions } from "./input/stage-file-input.ts";
+import { appShortcutManager } from "./shortcuts/app-shortcut-manager.ts";
+import { handleAppShortcutKeydown } from "./shortcuts/app-shortcuts.ts";
+import { bindShortcutLabel } from "./shortcuts/shortcut-label.ts";
+import { renderShortcutsPanelSection } from "./shortcuts/shortcuts-panel-section.ts";
 import { appVersion } from "./version.ts";
 import type { SffWasmBridgeOptions } from "./wasm/sff-bridge.ts";
 import { loadSpriteSheet } from "./wasm/sff-bridge.ts";
@@ -26,6 +33,26 @@ export interface RenderAppOptions {
   /** Forwarded to the `sff` WASM bridge (sprite reference validation); injectable for testing. */
   sffBridgeOptions?: SffWasmBridgeOptions;
 }
+
+/**
+ * Keyboard shortcut wiring (backlog item 009) module-level state, mirroring
+ * `lifebar-editor`'s own identical shape: `appShortcutManager` is a
+ * long-lived singleton outliving any one `renderApp` call, so a repeated
+ * call (a real reload never does this, but tests calling it many times
+ * against the same jsdom `window` do) must tear down what a *previous* call
+ * attached before attaching its own, the same "replace, not append"
+ * contract `renderApp` already gives its own DOM content.
+ */
+let currentShortcutKeydownListener:
+  | ((event: KeyboardEvent) => void)
+  | undefined;
+/** Undo/Redo's own label bindings -- stable for a whole `renderApp` call (their buttons are created once, not recreated per document load). */
+let currentToolbarShortcutLabelUnbinds: Array<() => void> = [];
+/** Save/Export's button is recreated on every `mountDocument` call (a new file loaded, or the wizard used again) -- rebound each time, unlike the toolbar bindings above. */
+let unbindSaveExportLabel: (() => void) | undefined;
+/** Add BG Element's button is recreated on every structural change to the elements editor (even more often than Save/Export's) -- rebound after every such rerender. */
+let unbindAddElementLabel: (() => void) | undefined;
+let currentShortcutsPanelElement: WuikShortcutsPanelElement | undefined;
 
 /**
  * Builds the app's root frame — a `web-ui-kit` `<wuik-app-shell>` with the
@@ -45,6 +72,23 @@ export function renderApp(
 ): void {
   root.replaceChildren();
 
+  if (currentShortcutKeydownListener !== undefined) {
+    window.removeEventListener("keydown", currentShortcutKeydownListener);
+    currentShortcutKeydownListener = undefined;
+  }
+  for (const unbind of currentToolbarShortcutLabelUnbinds) {
+    unbind();
+  }
+  currentToolbarShortcutLabelUnbinds = [];
+  unbindSaveExportLabel?.();
+  unbindSaveExportLabel = undefined;
+  unbindAddElementLabel?.();
+  unbindAddElementLabel = undefined;
+  if (currentShortcutsPanelElement !== undefined) {
+    currentShortcutsPanelElement.manager = undefined;
+    currentShortcutsPanelElement = undefined;
+  }
+
   const shell = document.createElement("wuik-app-shell");
 
   const toolbar = document.createElement("wuik-toolbar");
@@ -56,12 +100,25 @@ export function renderApp(
   toolbar.appendChild(title);
 
   // Undo/Redo (backlog item 008): the explicit toolbar-control reachability
-  // path — a keyboard shortcut is deferred until this app adopts a shared
-  // shortcut manager (item 009), see
-  // .vibe/decisions/006-undo-redo-scoped-to-current-document-shortcut-deferred.md.
+  // path, plus (item 009) a rebindable keyboard shortcut via the shared
+  // shortcut manager wired at the bottom of this function.
   const undoRedoSection = document.createElement("div");
   undoRedoSection.className = "app-undo-redo";
   const undoRedoControls = renderUndoRedoControls(undoRedoSection);
+  currentToolbarShortcutLabelUnbinds.push(
+    bindShortcutLabel(
+      undoRedoControls.undoButton,
+      appShortcutManager,
+      "undo",
+      "Undo",
+    ),
+    bindShortcutLabel(
+      undoRedoControls.redoButton,
+      appShortcutManager,
+      "redo",
+      "Redo",
+    ),
+  );
   toolbar.appendChild(undoRedoSection);
 
   shell.appendChild(toolbar);
@@ -72,6 +129,15 @@ export function renderApp(
   const elementsContainer = document.createElement("div");
   const modelEditorContainer = document.createElement("div");
   const saveExportContainer = document.createElement("div");
+  const shortcutsPanelSectionContainer = document.createElement("div");
+
+  // Both reassigned by `mountDocument`/`rerenderElements` below, and read by
+  // the keydown dispatcher at the bottom of this function -- `undefined`
+  // until a document is actually loaded/created, so a shortcut pressed
+  // before that point safely no-ops via optional chaining rather than
+  // throwing.
+  let saveExportHandle: SaveExportHandle | undefined;
+  let elementsHandle: ElementsEditorHandle | undefined;
 
   /**
    * Wires a stage document (from a real file load, or freshly built by the
@@ -105,7 +171,14 @@ export function renderApp(
       },
     });
     renderModelEditor(modelEditorContainer, doc.stage);
-    renderSaveExport(saveExportContainer);
+    unbindSaveExportLabel?.();
+    saveExportHandle = renderSaveExport(saveExportContainer);
+    unbindSaveExportLabel = bindShortcutLabel(
+      saveExportHandle.button,
+      appShortcutManager,
+      "save-export",
+      "Save / Export",
+    );
 
     // Sprite reference validation needs the sheet's metadata, decoded via
     // a second, independent WASM module (see
@@ -124,15 +197,53 @@ export function renderApp(
     const selectedElements = new Set<BGElement>();
     let spriteGroups: SpriteGroup[] | null =
       spriteSheetBytes === null ? [] : null;
+
+    /**
+     * Rebinds the shortcut-hint label onto whichever "Add element" button
+     * currently exists in `elementsContainer`. Unlike Save/Export or
+     * Undo/Redo, this button is recreated on every *structural* rerender
+     * (add, remove, type switch, a batch apply/delete) -- not just on a
+     * fresh document load -- and `elements-editor.ts`'s own internal
+     * `rerender()` closure (which every one of those user actions calls
+     * directly) bypasses `rerenderElements` below entirely. So this must be
+     * called from two places: here, for the document-load/sprite-sheet-
+     * decode paths that do go through `rerenderElements`, and again from
+     * `onChange` below, which fires after *every* committed edit
+     * (structural or not) regardless of which internal path rebuilt the
+     * DOM. A field-only edit doesn't actually replace the button, so
+     * rebinding there is a harmless, cheap no-op-ish repeat.
+     */
+    function rebindAddElementLabel(): void {
+      unbindAddElementLabel?.();
+      const addElementButton = elementsContainer.querySelector<HTMLElement>(
+        '[data-action="add-element"]',
+      );
+      if (addElementButton) {
+        unbindAddElementLabel = bindShortcutLabel(
+          addElementButton,
+          appShortcutManager,
+          "add-element",
+          "Add BG Element",
+        );
+      }
+    }
+
     const rerenderElements = () => {
-      renderElementsEditor(elementsContainer, doc.stage, spriteGroups, {
-        expandedRows,
-        selectedElements,
-        onChange: (command) => {
-          commandStack.push(command);
-          undoRedoControls.refresh();
+      elementsHandle = renderElementsEditor(
+        elementsContainer,
+        doc.stage,
+        spriteGroups,
+        {
+          expandedRows,
+          selectedElements,
+          onChange: (command) => {
+            commandStack.push(command);
+            undoRedoControls.refresh();
+            rebindAddElementLabel();
+          },
         },
-      });
+      );
+      rebindAddElementLabel();
     };
     rerenderElements();
 
@@ -159,16 +270,39 @@ export function renderApp(
   renderNewStageWizard(newStageWizardContainer, {
     onCreated: (doc) => mountDocument(doc, null, true),
   });
+
+  // Keyboard Shortcuts panel (backlog item 009): the only discovery path
+  // for this brand-new capability, so it starts expanded and sits at the
+  // bottom of the main content -- after Save/Export, not above it, so it
+  // doesn't push more load-bearing content down the page on first paint.
+  // See .vibe/decisions/007-remappable-shortcuts-actions-and-batch-delete-design.md.
+  currentShortcutsPanelElement = renderShortcutsPanelSection(
+    shortcutsPanelSectionContainer,
+    appShortcutManager,
+  );
+
   main.append(
     newStageWizardContainer,
     characteristicsContainer,
     elementsContainer,
     modelEditorContainer,
     saveExportContainer,
+    shortcutsPanelSectionContainer,
   );
   shell.appendChild(main);
 
   root.appendChild(shell);
+
+  currentShortcutKeydownListener = (event: KeyboardEvent) => {
+    handleAppShortcutKeydown(event, appShortcutManager, {
+      onSaveExport: () => saveExportHandle?.triggerSaveExport(),
+      onUndo: () => undoRedoControls.undo(),
+      onRedo: () => undoRedoControls.redo(),
+      onAddElement: () => elementsHandle?.triggerAddElement(),
+      onDeleteSelection: () => elementsHandle?.triggerDeleteSelection(),
+    });
+  };
+  window.addEventListener("keydown", currentShortcutKeydownListener);
 }
 
 const app = document.querySelector<HTMLDivElement>("#app");
