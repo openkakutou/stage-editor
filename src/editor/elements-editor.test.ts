@@ -1,5 +1,6 @@
 import { CommandStack } from "@openkakutou/web-ui-kit";
 import { describe, expect, it, vi } from "vitest";
+import { initAppI18n } from "../i18n/i18n.ts";
 import type { SpriteGroup } from "../wasm/sff-types.ts";
 import type { BGElement, StageData } from "../wasm/types.ts";
 import { renderElementsEditor } from "./elements-editor.ts";
@@ -1097,5 +1098,37 @@ describe("renderElementsEditor — undo/redo commands (item 008)", () => {
     // Each element's own distinct prior sprite is restored, not a single shared value.
     expect(stage.elements?.[0].sprite).toEqual({ group: -1, image: -1 });
     expect(stage.elements?.[1].sprite).toEqual({ group: 9, image: 9 });
+  });
+});
+
+describe("renderElementsEditor — localized rendering (backlog item 010)", () => {
+  it("renders the heading and an expanded row's field labels in French, preserving selection/expansion across the re-render", async () => {
+    const i18n = await initAppI18n();
+    await i18n.changeLanguage("fr");
+    const root = document.createElement("div");
+    const onlyElement = element({ name: "sky" });
+    const stage = stageWith([onlyElement]);
+    const expandedRows = new Set<number>([0]);
+    const selectedElements = new Set<BGElement>([onlyElement]);
+
+    renderElementsEditor(root, stage, [], { expandedRows, selectedElements });
+
+    expect(root.querySelector("h2")?.textContent).toBe(
+      "Éléments d'arrière-plan (1)",
+    );
+    expect(
+      root
+        .querySelector('[data-field="name"]')
+        ?.closest<HTMLElement>(".elements-editor__body")?.hidden,
+    ).toBe(false);
+    expect(
+      root.querySelector<HTMLInputElement>('[data-action="select-element"]')
+        ?.checked,
+    ).toBe(true);
+    expect(root.querySelector('[data-action="add-element"]')?.textContent).toBe(
+      "Ajouter un élément",
+    );
+
+    await i18n.changeLanguage("en");
   });
 });

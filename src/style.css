@@ -23,6 +23,16 @@
 }
 
 /*
+ * The locale switcher (backlog item 010) sits at the toolbar's far end,
+ * after Undo/Redo -- `.app-undo-redo`'s own `margin-inline-start: auto`
+ * already pushes both it and this switcher there together. Ported from
+ * `lifebar-editor`'s own identical `.locale-switcher` rule.
+ */
+.locale-switcher {
+  margin-inline-start: var(--wuik-space-2);
+}
+
+/*
  * Stage file input (backlog item 002). Mirrors `stage-viewer-web`'s own
  * folder-input styling verbatim — same dropzone/status/reset shape, same
  * class names, since this is the same component ported as-is.

@@ -38,6 +38,7 @@
 // blur-edits of one number) merge into a single history entry without
 // ever merging across two different fields.
 import type { Command } from "@openkakutou/web-ui-kit";
+import { t } from "../i18n/i18n.ts";
 import type { StageData } from "../wasm/types.ts";
 import { fieldCommand } from "./field-command.ts";
 
@@ -48,27 +49,45 @@ export interface CharacteristicsEditorOptions {
 
 type TextField = "name" | "author";
 
-const TEXT_FIELDS: readonly { field: TextField; label: string }[] = [
-  { field: "name", label: "Name" },
-  { field: "author", label: "Author" },
-];
+function textFields(): readonly { field: TextField; label: string }[] {
+  return [
+    { field: "name", label: t("characteristics.nameLabel", "Name") },
+    { field: "author", label: t("characteristics.authorLabel", "Author") },
+  ];
+}
 
 type CameraField = "left" | "right" | "high" | "low";
 type BoundaryField = "left" | "right" | "topBound" | "bottomBound";
 
-const CAMERA_FIELDS: readonly { field: CameraField; label: string }[] = [
-  { field: "left", label: "Camera Left" },
-  { field: "right", label: "Camera Right" },
-  { field: "high", label: "Camera High" },
-  { field: "low", label: "Camera Low" },
-];
+function cameraFields(): readonly { field: CameraField; label: string }[] {
+  return [
+    { field: "left", label: t("characteristics.cameraLeft", "Camera Left") },
+    { field: "right", label: t("characteristics.cameraRight", "Camera Right") },
+    { field: "high", label: t("characteristics.cameraHigh", "Camera High") },
+    { field: "low", label: t("characteristics.cameraLow", "Camera Low") },
+  ];
+}
 
-const BOUNDARY_FIELDS: readonly { field: BoundaryField; label: string }[] = [
-  { field: "left", label: "Boundary Left" },
-  { field: "right", label: "Boundary Right" },
-  { field: "topBound", label: "Boundary Top" },
-  { field: "bottomBound", label: "Boundary Bottom" },
-];
+function boundaryFields(): readonly { field: BoundaryField; label: string }[] {
+  return [
+    {
+      field: "left",
+      label: t("characteristics.boundaryLeft", "Boundary Left"),
+    },
+    {
+      field: "right",
+      label: t("characteristics.boundaryRight", "Boundary Right"),
+    },
+    {
+      field: "topBound",
+      label: t("characteristics.boundaryTop", "Boundary Top"),
+    },
+    {
+      field: "bottomBound",
+      label: t("characteristics.boundaryBottom", "Boundary Bottom"),
+    },
+  ];
+}
 
 /**
  * Renders the characteristics editor into `root`, replacing its previous
@@ -89,9 +108,9 @@ export function renderCharacteristicsEditor(
   identity.className =
     "characteristics-editor__panel characteristics-editor__identity";
   const identityTitle = document.createElement("h2");
-  identityTitle.textContent = "Identity";
+  identityTitle.textContent = t("characteristics.identityHeading", "Identity");
   identity.appendChild(identityTitle);
-  for (const { field, label } of TEXT_FIELDS) {
+  for (const { field, label } of textFields()) {
     identity.appendChild(buildTextField(field, label, stage, onChange));
   }
 
@@ -99,9 +118,12 @@ export function renderCharacteristicsEditor(
   camera.className =
     "characteristics-editor__panel characteristics-editor__camera-bounds";
   const cameraTitle = document.createElement("h2");
-  cameraTitle.textContent = "Camera Bounds";
+  cameraTitle.textContent = t(
+    "characteristics.cameraBoundsHeading",
+    "Camera Bounds",
+  );
   camera.appendChild(cameraTitle);
-  for (const { field, label } of CAMERA_FIELDS) {
+  for (const { field, label } of cameraFields()) {
     camera.appendChild(
       buildNumericField(
         `cameraBounds.${field}`,
@@ -119,9 +141,12 @@ export function renderCharacteristicsEditor(
   boundaries.className =
     "characteristics-editor__panel characteristics-editor__stage-boundaries";
   const boundariesTitle = document.createElement("h2");
-  boundariesTitle.textContent = "Stage Boundaries";
+  boundariesTitle.textContent = t(
+    "characteristics.stageBoundariesHeading",
+    "Stage Boundaries",
+  );
   boundaries.appendChild(boundariesTitle);
-  for (const { field, label } of BOUNDARY_FIELDS) {
+  for (const { field, label } of boundaryFields()) {
     boundaries.appendChild(
       buildNumericField(
         `stageBoundaries.${field}`,
@@ -230,7 +255,9 @@ function buildNumericField(
   input.addEventListener("blur", () => {
     const value = Number(input.value);
     if (input.value.trim() === "" || Number.isNaN(value)) {
-      setInvalid(`${label} must be a number.`);
+      setInvalid(
+        t("common.numberRequired", "{{label}} must be a number.", { label }),
+      );
       return;
     }
     setInvalid(null);

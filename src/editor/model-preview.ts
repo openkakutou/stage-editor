@@ -15,6 +15,7 @@
 // pays the cost of downloading or evaluating this module's heaviest
 // dependency at all.
 import type * as THREE from "three";
+import { onLocaleChange, t } from "../i18n/i18n.ts";
 import type { CameraParams, ModelTransform } from "./model-camera.ts";
 
 /** The minimal shape this module needs from a loaded glTF result — deliberately
@@ -173,7 +174,7 @@ function buildFailureBanner(bodyText: string): HTMLElement {
   banner.setAttribute("role", "status");
   const heading = document.createElement("p");
   heading.className = "model-preview__error-heading";
-  heading.textContent = "3D preview unavailable";
+  heading.textContent = t("model.unavailableHeading", "3D preview unavailable");
   const body = document.createElement("p");
   body.className = "model-preview__error-body";
   body.textContent = bodyText;
@@ -202,6 +203,20 @@ export function renderModelPreview(
   if (input === null) {
     return NOOP_HANDLE;
   }
+
+  // Live locale switching (backlog item 010): whenever a failure banner is
+  // showing, `currentFailureReason` recomputes its body text (re-running
+  // the same describe closure, which reads the active locale itself via
+  // `t()`) and the whole banner is rebuilt — cheap, since it carries no
+  // state of its own, unlike the three.js setup below. Stays `null` (a
+  // no-op locale change) once the real preview mounts successfully.
+  // Mirrors `stage-viewer-web`'s own identical `model-preview.ts` handling.
+  let currentFailureReason: (() => string) | null = null;
+  const unsubscribeLocale = onLocaleChange(() => {
+    if (currentFailureReason) {
+      root.replaceChildren(buildFailureBanner(currentFailureReason()));
+    }
+  });
 
   const createRendererFn = options.createRenderer ?? defaultCreateRenderer;
   const loadGLTFFn = options.loadGLTF ?? defaultLoadGLTF;
@@ -242,6 +257,7 @@ export function renderModelPreview(
     if (rafHandle !== null) cancelAnimationFrameFn(rafHandle);
     resizeObserver?.disconnect();
     renderer?.dispose();
+    unsubscribeLocale();
   });
 
   function requestRender(): void {
@@ -307,11 +323,12 @@ export function renderModelPreview(
     const createdRenderer =
       rendererOutcome.status === "fulfilled" ? rendererOutcome.value : null;
     if (!createdRenderer) {
-      root.replaceChildren(
-        buildFailureBanner(
+      currentFailureReason = () =>
+        t(
+          "model.webglUnavailable",
           "This browser or environment could not create a WebGL renderer for the 3D preview.",
-        ),
-      );
+        );
+      root.replaceChildren(buildFailureBanner(currentFailureReason()));
       return;
     }
     renderer = createdRenderer;
@@ -319,15 +336,19 @@ export function renderModelPreview(
     if (gltfOutcome.status === "rejected") {
       renderer.dispose();
       renderer = null;
-      root.replaceChildren(
-        buildFailureBanner(
-          `The 3D model could not be loaded: ${
-            gltfOutcome.reason instanceof Error
-              ? gltfOutcome.reason.message
-              : String(gltfOutcome.reason)
-          }`,
-        ),
-      );
+      const gltfMessage =
+        gltfOutcome.reason instanceof Error
+          ? gltfOutcome.reason.message
+          : String(gltfOutcome.reason);
+      currentFailureReason = () =>
+        t(
+          "model.modelLoadError",
+          "The 3D model could not be loaded: {{message}}",
+          {
+            message: gltfMessage,
+          },
+        );
+      root.replaceChildren(buildFailureBanner(currentFailureReason()));
       return;
     }
     const model = gltfOutcome.value;

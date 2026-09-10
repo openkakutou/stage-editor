@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { initAppI18n } from "../i18n/i18n.ts";
 import type { StageData } from "../wasm/types.ts";
 import { renderCharacteristicsEditor } from "./characteristics-editor.ts";
 
@@ -211,5 +212,28 @@ describe("renderCharacteristicsEditor", () => {
     expect(commands).toHaveLength(2);
     expect(commands[0].coalesceKey).not.toBe(commands[1].coalesceKey);
     expect(commands[0].coalesceKey).toBeDefined();
+  });
+});
+
+describe("renderCharacteristicsEditor — localized rendering (backlog item 010)", () => {
+  it("renders every heading and field label in French once this app's i18n is initialized", async () => {
+    const i18n = await initAppI18n();
+    await i18n.changeLanguage("fr");
+    const root = document.createElement("div");
+
+    renderCharacteristicsEditor(root, stageWith());
+
+    expect(root.querySelector("h2")?.textContent).toBe("Identité");
+    expect(
+      root.querySelector('label[for="characteristics-editor-name"]')
+        ?.textContent,
+    ).toBe("Nom");
+    expect(
+      root.querySelector(
+        'label[for="characteristics-editor-cameraBounds.left"]',
+      )?.textContent,
+    ).toBe("Caméra Gauche");
+
+    await i18n.changeLanguage("en");
   });
 });

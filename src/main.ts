@@ -1,10 +1,17 @@
 import "@openkakutou/web-ui-kit/tokens.css";
 import "@openkakutou/web-ui-kit";
 import "./style.css";
-import type { WuikShortcutsPanelElement } from "@openkakutou/web-ui-kit";
+import type {
+  Command,
+  WuikLocaleSwitcherElement,
+  WuikShortcutsPanelElement,
+} from "@openkakutou/web-ui-kit";
 import { commandStack } from "./document/command-stack-store.ts";
 import type { StageDocument } from "./document/stage-document-store.ts";
-import { setStageDocument } from "./document/stage-document-store.ts";
+import {
+  getStageDocument,
+  setStageDocument,
+} from "./document/stage-document-store.ts";
 import { renderCharacteristicsEditor } from "./editor/characteristics-editor.ts";
 import type { ElementsEditorHandle } from "./editor/elements-editor.ts";
 import { renderElementsEditor } from "./editor/elements-editor.ts";
@@ -12,11 +19,15 @@ import { renderModelEditor } from "./editor/model-editor.ts";
 import type { SaveExportHandle } from "./editor/save-export.ts";
 import { renderSaveExport } from "./editor/save-export.ts";
 import { renderUndoRedoControls } from "./editor/undo-redo-controls.ts";
+import { getI18n, initAppI18n, onLocaleChange, t } from "./i18n/i18n.ts";
 import { renderStageFileInput } from "./input/stage-file-input-view.ts";
 import type { StageFolderInputOptions } from "./input/stage-file-input.ts";
 import { appShortcutManager } from "./shortcuts/app-shortcut-manager.ts";
 import { handleAppShortcutKeydown } from "./shortcuts/app-shortcuts.ts";
-import { bindShortcutLabel } from "./shortcuts/shortcut-label.ts";
+import {
+  bindShortcutLabel,
+  formatShortcutTitle,
+} from "./shortcuts/shortcut-label.ts";
 import { renderShortcutsPanelSection } from "./shortcuts/shortcuts-panel-section.ts";
 import { appVersion } from "./version.ts";
 import type { SffWasmBridgeOptions } from "./wasm/sff-bridge.ts";
@@ -25,6 +36,9 @@ import type { SpriteGroup } from "./wasm/sff-types.ts";
 import type { BGElement } from "./wasm/types.ts";
 import { renderNewStageWizard } from "./wizard/new-stage-wizard.ts";
 
+// The app's own brand name -- a proper noun, deliberately never translated,
+// same convention as every sibling OpenKakutou app. See
+// .vibe/decisions/008-i18n-integration-approach.md.
 const APP_TITLE = "Stage Editor";
 
 export interface RenderAppOptions {
@@ -53,6 +67,17 @@ let unbindSaveExportLabel: (() => void) | undefined;
 /** Add BG Element's button is recreated on every structural change to the elements editor (even more often than Save/Export's) -- rebound after every such rerender. */
 let unbindAddElementLabel: (() => void) | undefined;
 let currentShortcutsPanelElement: WuikShortcutsPanelElement | undefined;
+/**
+ * Save/Export's own internal locale-change subscription (backlog item 010)
+ * -- unlike `unbindSaveExportLabel` above (a shortcut-hint binding this file
+ * owns directly), this one lives inside `save-export.ts` itself and must be
+ * stopped the same "replace, don't accumulate" way before every fresh
+ * `renderSaveExport` call, or a repeated document load/reload keeps piling
+ * up listeners pointed at detached DOM. See .vibe/decisions/008.
+ */
+let unsubscribeSaveExportLocale: (() => void) | undefined;
+/** This whole render's own top-level locale-change subscription (backlog item 010), covering everything this file retranslates directly. */
+let currentUnsubscribeLocaleChange: (() => void) | undefined;
 
 /**
  * Builds the app's root frame — a `web-ui-kit` `<wuik-app-shell>` with the
@@ -82,12 +107,16 @@ export function renderApp(
   currentToolbarShortcutLabelUnbinds = [];
   unbindSaveExportLabel?.();
   unbindSaveExportLabel = undefined;
+  unsubscribeSaveExportLocale?.();
+  unsubscribeSaveExportLocale = undefined;
   unbindAddElementLabel?.();
   unbindAddElementLabel = undefined;
   if (currentShortcutsPanelElement !== undefined) {
     currentShortcutsPanelElement.manager = undefined;
     currentShortcutsPanelElement = undefined;
   }
+  currentUnsubscribeLocaleChange?.();
+  currentUnsubscribeLocaleChange = undefined;
 
   const shell = document.createElement("wuik-app-shell");
 
@@ -110,16 +139,26 @@ export function renderApp(
       undoRedoControls.undoButton,
       appShortcutManager,
       "undo",
-      "Undo",
+      t("actions.undo", "Undo"),
     ),
     bindShortcutLabel(
       undoRedoControls.redoButton,
       appShortcutManager,
       "redo",
-      "Redo",
+      t("actions.redo", "Redo"),
     ),
   );
   toolbar.appendChild(undoRedoSection);
+
+  // Language switcher (backlog item 010): last in the toolbar, mirroring
+  // every sibling OpenKakutou app's own placement.
+  const localeSwitcher = document.createElement(
+    "wuik-locale-switcher",
+  ) as unknown as WuikLocaleSwitcherElement;
+  localeSwitcher.className = "locale-switcher";
+  localeSwitcher.setAttribute("label", t("app.languageLabel", "Language"));
+  localeSwitcher.i18n = getI18n();
+  toolbar.appendChild(localeSwitcher);
 
   shell.appendChild(toolbar);
 
@@ -131,13 +170,21 @@ export function renderApp(
   const saveExportContainer = document.createElement("div");
   const shortcutsPanelSectionContainer = document.createElement("div");
 
-  // Both reassigned by `mountDocument`/`rerenderElements` below, and read by
-  // the keydown dispatcher at the bottom of this function -- `undefined`
-  // until a document is actually loaded/created, so a shortcut pressed
-  // before that point safely no-ops via optional chaining rather than
-  // throwing.
+  // Reassigned by `mountDocument`/`rerenderElements` below, and read by the
+  // keydown dispatcher and the locale-change subscription at the bottom of
+  // this function -- `undefined` until a document is actually
+  // loaded/created, so either safely no-ops via optional chaining rather
+  // than throwing.
   let saveExportHandle: SaveExportHandle | undefined;
   let elementsHandle: ElementsEditorHandle | undefined;
+  /** Set by `mountDocument`, re-invoked by the locale-change subscription below -- the exact same full-list-rebuild path a sprite-sheet decode already triggers, so a language switch preserves the current selection/expansion the same way. */
+  let rerenderElements: (() => void) | undefined;
+
+  /** One committed field's undo/redo Command, pushed by the characteristics editor -- hoisted so both the initial mount and a locale-triggered re-render use the exact same callback. */
+  function handleCharacteristicsChange(command: Command): void {
+    commandStack.push(command);
+    undoRedoControls.refresh();
+  }
 
   /**
    * Wires a stage document (from a real file load, or freshly built by the
@@ -165,19 +212,18 @@ export function renderApp(
 
     setStageDocument(doc);
     renderCharacteristicsEditor(characteristicsContainer, doc.stage, {
-      onChange: (command) => {
-        commandStack.push(command);
-        undoRedoControls.refresh();
-      },
+      onChange: handleCharacteristicsChange,
     });
     renderModelEditor(modelEditorContainer, doc.stage);
     unbindSaveExportLabel?.();
+    unsubscribeSaveExportLocale?.();
     saveExportHandle = renderSaveExport(saveExportContainer);
+    unsubscribeSaveExportLocale = saveExportHandle.unsubscribeLocale;
     unbindSaveExportLabel = bindShortcutLabel(
       saveExportHandle.button,
       appShortcutManager,
       "save-export",
-      "Save / Export",
+      t("actions.saveExport", "Save / Export"),
     );
 
     // Sprite reference validation needs the sheet's metadata, decoded via
@@ -202,16 +248,18 @@ export function renderApp(
      * Rebinds the shortcut-hint label onto whichever "Add element" button
      * currently exists in `elementsContainer`. Unlike Save/Export or
      * Undo/Redo, this button is recreated on every *structural* rerender
-     * (add, remove, type switch, a batch apply/delete) -- not just on a
-     * fresh document load -- and `elements-editor.ts`'s own internal
-     * `rerender()` closure (which every one of those user actions calls
-     * directly) bypasses `rerenderElements` below entirely. So this must be
-     * called from two places: here, for the document-load/sprite-sheet-
-     * decode paths that do go through `rerenderElements`, and again from
-     * `onChange` below, which fires after *every* committed edit
-     * (structural or not) regardless of which internal path rebuilt the
-     * DOM. A field-only edit doesn't actually replace the button, so
-     * rebinding there is a harmless, cheap no-op-ish repeat.
+     * (add, remove, type switch, a batch apply/delete, or a locale change)
+     * -- not just on a fresh document load -- and `elements-editor.ts`'s
+     * own internal `rerender()` closure (which every one of those user
+     * actions calls directly) bypasses `rerenderElements` below entirely.
+     * So this must be called from two places: here, for the
+     * document-load/sprite-sheet-decode/locale-change paths that do go
+     * through `rerenderElements`, and again from `onChange` below, which
+     * fires after *every* committed edit (structural or not) regardless of
+     * which internal path rebuilt the DOM. A field-only edit doesn't
+     * actually replace the button, so rebinding there is a harmless, cheap
+     * no-op-ish repeat. Reads the translated label fresh every call, so a
+     * locale change picks it up automatically the next time this runs.
      */
     function rebindAddElementLabel(): void {
       unbindAddElementLabel?.();
@@ -223,12 +271,12 @@ export function renderApp(
           addElementButton,
           appShortcutManager,
           "add-element",
-          "Add BG Element",
+          t("actions.addElement", "Add BG Element"),
         );
       }
     }
 
-    const rerenderElements = () => {
+    rerenderElements = () => {
       elementsHandle = renderElementsEditor(
         elementsContainer,
         doc.stage,
@@ -255,7 +303,7 @@ export function renderApp(
         .catch(() => {
           spriteGroups = [];
         })
-        .finally(rerenderElements);
+        .finally(() => rerenderElements?.());
     }
 
     if (focusCharacteristics) {
@@ -267,15 +315,23 @@ export function renderApp(
     onLoaded: (result) => mountDocument(result, result.sffBytes, false),
     bridgeOptions: options.bridgeOptions,
   });
-  renderNewStageWizard(newStageWizardContainer, {
-    onCreated: (doc) => mountDocument(doc, null, true),
-  });
+
+  // No locale-sensitive state of its own -- re-invoked wholesale by the
+  // locale-change subscription below, same as `rerenderElements` above.
+  function refreshWizard(): void {
+    renderNewStageWizard(newStageWizardContainer, {
+      onCreated: (doc) => mountDocument(doc, null, true),
+    });
+  }
+  refreshWizard();
 
   // Keyboard Shortcuts panel (backlog item 009): the only discovery path
   // for this brand-new capability, so it starts expanded and sits at the
   // bottom of the main content -- after Save/Export, not above it, so it
   // doesn't push more load-bearing content down the page on first paint.
   // See .vibe/decisions/007-remappable-shortcuts-actions-and-batch-delete-design.md.
+  // Retranslates its own header label internally on a locale change (see
+  // shortcuts-panel-section.ts) -- nothing for this file to wire up.
   currentShortcutsPanelElement = renderShortcutsPanelSection(
     shortcutsPanelSectionContainer,
     appShortcutManager,
@@ -303,9 +359,84 @@ export function renderApp(
     });
   };
   window.addEventListener("keydown", currentShortcutKeydownListener);
+
+  /**
+   * Recomputes `element`'s shortcut-hint `title`/`aria-keyshortcuts` from
+   * the manager's current live binding and a freshly translated base label
+   * -- called directly here (backlog item 010) rather than by re-calling
+   * `bindShortcutLabel`, which would attach a second, permanent `"change"`
+   * listener onto the shared, long-lived `appShortcutManager` on every
+   * language switch. See .vibe/decisions/008-i18n-integration-approach.md.
+   */
+  function applyShortcutHint(
+    element: HTMLElement,
+    actionId: string,
+    key: string,
+    defaultLabel: string,
+  ): void {
+    const binding = appShortcutManager.getBinding(actionId);
+    element.title = formatShortcutTitle(t(key, defaultLabel), binding);
+  }
+
+  // Live locale switching (backlog item 010): re-translates every piece of
+  // "chrome" this file owns directly -- the switcher's own label, the
+  // Undo/Redo buttons' text and shortcut-hint title/aria-keyshortcuts, and
+  // Save/Export's own shortcut-hint title (its visible text/status
+  // retranslates itself, from its own internal subscription) -- and
+  // re-invokes the characteristics/model/elements editors' and the
+  // wizard's own existing render calls, which preserve every bit of
+  // in-progress state each one already threads through (selection,
+  // expansion, the model editor's live preview session). The stage file
+  // input, the 3D live preview's own failure banner, and the Keyboard
+  // Shortcuts panel each retranslate themselves internally. See
+  // .vibe/decisions/008-i18n-integration-approach.md.
+  currentUnsubscribeLocaleChange = onLocaleChange(() => {
+    localeSwitcher.setAttribute("label", t("app.languageLabel", "Language"));
+    undoRedoControls.undoButton.textContent = t("actions.undo", "Undo");
+    undoRedoControls.redoButton.textContent = t("actions.redo", "Redo");
+    applyShortcutHint(
+      undoRedoControls.undoButton,
+      "undo",
+      "actions.undo",
+      "Undo",
+    );
+    applyShortcutHint(
+      undoRedoControls.redoButton,
+      "redo",
+      "actions.redo",
+      "Redo",
+    );
+    if (saveExportHandle) {
+      applyShortcutHint(
+        saveExportHandle.button,
+        "save-export",
+        "actions.saveExport",
+        "Save / Export",
+      );
+    }
+
+    const loadedStage = getStageDocument()?.stage;
+    if (loadedStage) {
+      renderCharacteristicsEditor(characteristicsContainer, loadedStage, {
+        onChange: handleCharacteristicsChange,
+      });
+      renderModelEditor(modelEditorContainer, loadedStage);
+      rerenderElements?.();
+    }
+    refreshWizard();
+  });
 }
 
-const app = document.querySelector<HTMLDivElement>("#app");
-if (app) {
-  renderApp(app, appVersion);
+async function mount(): Promise<void> {
+  await initAppI18n();
+  const app = document.querySelector<HTMLDivElement>("#app");
+  if (app) {
+    renderApp(app, appVersion);
+  }
+}
+
+if (document.readyState === "complete") {
+  void mount();
+} else {
+  window.addEventListener("load", () => void mount(), { once: true });
 }

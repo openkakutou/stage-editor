@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { StageDocument } from "../document/stage-document-store.ts";
+import { initAppI18n } from "../i18n/i18n.ts";
 import { renderNewStageWizard } from "./new-stage-wizard.ts";
 
 function blankButton(root: HTMLElement): HTMLElement {
@@ -101,5 +102,23 @@ describe("renderNewStageWizard", () => {
     templateButton(root).click();
 
     expect(onCreated).not.toHaveBeenCalled();
+  });
+});
+
+describe("renderNewStageWizard — localized rendering (backlog item 010)", () => {
+  it("renders the heading and every button label in French, including the bundled template's own label", async () => {
+    const i18n = await initAppI18n();
+    await i18n.changeLanguage("fr");
+    const root = document.createElement("div");
+
+    renderNewStageWizard(root, { onCreated: vi.fn() });
+
+    expect(root.querySelector("h2")?.textContent).toBe(
+      "Créer un nouveau stage",
+    );
+    expect(blankButton(root).textContent).toBe("Stage vierge");
+    expect(templateButton(root).textContent).toBe("Pièce simple");
+
+    await i18n.changeLanguage("en");
   });
 });

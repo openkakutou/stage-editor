@@ -61,6 +61,52 @@ A real regression caught only by real-browser verification (see below), now cove
 
 `main.test.ts`'s own shortcut-integration cases confirm the end-to-end wiring in the real app shell: Ctrl+S/Ctrl+Z/Ctrl+Y/Ctrl+Shift+A/Delete each trigger the same code path as their corresponding button; Ctrl+Z and Delete are no-ops while focus is inside a real text field; the shortcuts panel is mounted, fed the app's own manager, and starts expanded; each bound button's tooltip reflects the live binding and updates immediately on a rebind; no listener or manager subscription is left behind across a repeated `renderApp` call; and — a regression test written after a real-browser bug (see below) — the "Add element" button's own shortcut hint survives a structural rerender triggered by the editor's own internal action, not just the very first mount.
 
+## Localization (i18n) (backlog item 010)
+
+`i18n.test.ts` covers the shared wrapper directly: `t()` returns the
+interpolated `defaultValue` verbatim before `initAppI18n` has resolved in
+the page (including an unmatched `{{var}}` placeholder left untouched);
+once initialized, it translates a known key under this app's own
+namespace, switches language, uses this app's own `localStorage` key
+rather than `@openkakutou/web-ui-kit`'s shared default, falls back to
+`defaultValue` for a key missing from every catalog, and interpolates
+multiple `{{vars}}` into a real translated entry. Each test that needs a
+fresh module instance calls `vi.resetModules()` first, since the
+underlying i18next instance is a module-scoped singleton.
+
+Every screen extended for this item gained its own locale-change test,
+each proving the same shape: switch to French via `changeLanguage("fr")`,
+assert the now-visible text is the real French catalog entry (not the
+English fallback), and — where the screen owns session state — that the
+state survived untouched. `characteristics-editor.test.ts` and
+`new-stage-wizard.test.ts` assert every heading/label/button text.
+`elements-editor.test.ts` re-invokes the render function with the same
+`expandedRows`/`selectedElements` instances and confirms the row stays
+expanded and the checkbox stays checked. `model-editor.test.ts` calls
+`renderModelEditor` a second time with the same `stage` object and
+asserts the injected `renderPreview` spy was **not** called again (no
+remount) while every panel heading is now French.
+`stage-file-input-view.test.ts` selects an invalid folder, switches
+language, and asserts both the static label and the already-shown error
+message retranslate in place. `save-export.test.ts` triggers a real save,
+switches language, and asserts both the button and the already-shown
+"Saved …" status retranslate, then explicitly calls the returned handle's
+`unsubscribeLocale()` to prove the internal subscription is stoppable
+(this component is re-mounted on every new document load, unlike
+`lifebar-editor`'s equivalent, mounted once per session).
+`model-preview.test.ts` forces the WebGL-unavailable failure path,
+switches language, and asserts the failure banner's heading and body
+retranslate without a fresh mount attempt. `shortcuts-panel-section.test.ts`
+collapses the section, switches language, and asserts the header label
+retranslates while the collapsed state is preserved. `main.test.ts`'s own
+locale-integration case confirms the end-to-end wiring in the real app
+shell: a `<wuik-locale-switcher>` is mounted with a translated `label`
+attribute; creating a blank stage then switching language retranslates
+the switcher's own label, the toolbar Undo/Redo buttons, the
+characteristics editor, the BG element editor's heading and "Add
+element" button, and the New Stage Wizard's own buttons, all from one
+`onLocaleChange` subscription.
+
 ## jsdom gaps worked around in tests
 
 `scripts/download-wasm.mjs`'s `--version` flag resolves its own `package.json` path via `fileURLToPath(import.meta.url)` (given the string form of the URL) rather than constructing a `new URL(...)` object first. Under this project's jsdom test environment, the global `URL` constructor is jsdom's own (a different realm from Node's), and `fs/promises.readFile` rejects a `URL` instance from that other realm with "The URL must be of scheme file" even though its `href` is a correct `file:` path — this sidesteps that entirely. Real `node scripts/download-wasm.mjs --version` on the command line is unaffected either way.
@@ -84,3 +130,5 @@ For batch multi-select editing (backlog item 007), a real-browser pass caught tw
 For undo/redo (backlog item 008), a real-browser pass caught a real bug no unit test surfaced: applying a batch position offset moved the selected elements by *twice* the entered delta on the very first click — `CommandStack.push` calls the pushed command's `do()` once immediately in addition to the batch handler's own explicit first application, and the original `do()` re-added the same delta instead of replaying to an absolute target (fixed as described above, and now covered by regression tests). The unit tests missed it because they inspected the pushed `Command` object directly rather than routing it through a real `CommandStack.push`. With the fix in place, the same pass confirmed end-to-end: both toolbar buttons start disabled; creating a stage then editing its name enables Undo; clicking Undo reverts the name and correctly flips both buttons' disabled state; clicking Redo re-applies it; adding a BG element then clicking Undo removes it as a single step; and selecting two BG elements, applying a batch position offset, then clicking Undo *once* reverts both elements together rather than requiring one undo per element. No console errors throughout.
 
 For keyboard shortcuts (backlog item 009), a real-browser pass caught two real bugs neither jsdom nor a first read of the acceptance criteria surfaced, both fixed and confirmed with the same pass afterward: (1) the "Add element" button's own shortcut-hint tooltip went stale/empty after the very first add/remove/type-switch/batch action — `elements-editor.ts`'s own internal `rerender()` closure (which every one of those user actions calls directly, recreating the button each time) bypasses `app`'s rerender wrapper entirely, so a rebind that only ran from that wrapper never reached the freshly created button; fixed by also rebinding from the `onChange` callback that fires after every committed edit, structural or not (now covered by a `main.test.ts` regression test). (2) rebinding an action to a new key inside the shortcuts panel could immediately re-fire that same action — `<wuik-shortcuts-panel>`'s own rebind-capture calls `preventDefault()` on every key it captures but never `stopPropagation()`, so the very keydown that just set the new binding also bubbles to `app`'s own `window`-level listener and gets dispatched as a live keypress against the binding that now (as of that same event) owns it; most concerning for Delete Selection, which has no confirm step of its own — observed as an unexpected "Saved stage.def." status appearing right after rebinding Save/Export to a fresh key, and confirmed via a dedicated check that rebinding Delete Selection while an element was selected did not also delete it. Fixed by having the dispatcher no-op on an already-`preventDefault()`-ed event (now covered by an `app-shortcuts.test.ts` regression test). With both fixes in place, the same pass confirmed end-to-end, against a fresh blank stage: the shortcuts panel starts expanded, listing all five actions with their correct default keys; Ctrl+Shift+A adds a BG element with a correctly live tooltip; Ctrl+Z/Ctrl+Y undo/redo it; selecting the element then pressing Delete removes it instantly with the expected status message, and Undo restores it *and* its prior selection state; pressing Delete while focus is in a real text field does nothing; and rebinding Save/Export via the panel updates its toolbar tooltip immediately, with no accidental extra fire and no console errors throughout.
+
+For localization (backlog item 010), a real-browser pass confirmed the feature end-to-end, including a genuinely useful accident: this container's own system locale is French, so the headless browser's `navigator.language` is French too, and the app correctly auto-detected it on first load with no manual switch needed — direct proof the browser-detection path works, not just the manual switcher. The pass then created a blank stage, expanded a BG element row, selected its checkbox, and switched the toolbar's `<wuik-locale-switcher>` to French: every visible screen retranslated live, with no page reload — the switcher's own label, Undo/Redo, the characteristics editor's headings/field labels, the BG element editor's heading and "Add element" button, the 3D model editor's five panel headings, the New Stage Wizard's heading and buttons, the Save/Export button, and the Keyboard Shortcuts panel's own header — while the expanded BG element row stayed expanded, its checkbox stayed checked, and the Keyboard Shortcuts panel stayed expanded, none of them reset by the locale change. A page reload confirmed the French choice persisted (no English flash on the next load). Switching back to English and leaving the "Camera Left" field blank confirmed the numeric-validation error message translates too, in both languages ("Camera Left must be a number." / "Caméra Gauche doit être un nombre."). The shared `<wuik-shortcuts-panel>`'s own internal chrome (Reassign/Swap/Cancel) translated automatically via `@openkakutou/web-ui-kit`'s own merged catalog, confirming that integration; its five registered action labels (Save / Export, Undo, Redo, Add BG Element, Delete Selection) stayed in English, exactly as designed (see `docs/architecture.md`'s "Localization (i18n)" section). `<wuik-file-drop-zone>`'s own placeholder text ("Drag & drop files here, or click to browse") also stayed in English — a pre-existing `@openkakutou/web-ui-kit` gap this item doesn't own, since that component isn't part of the kit's own translated set today. No console errors throughout.

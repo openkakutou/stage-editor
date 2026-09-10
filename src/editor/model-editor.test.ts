@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { initAppI18n } from "../i18n/i18n.ts";
 import type { BGdef, Model, StageData } from "../wasm/types.ts";
 import { renderModelEditor } from "./model-editor.ts";
 import type { ModelPreviewHandle } from "./model-preview.ts";
@@ -459,5 +460,40 @@ describe("renderModelEditor — switching documents on the same root", () => {
     expect(preview.calls[1]).toMatchObject({ input: null });
     expect(preview.calls[2]).toMatchObject({ input: null });
     expect(root.querySelector(".model-editor__asset-reference")).toBeNull();
+  });
+});
+
+describe("renderModelEditor — localized rendering (backlog item 010)", () => {
+  it("re-invoking on a locale change renders every heading/label in French without remounting the live preview", async () => {
+    const i18n = await initAppI18n();
+    await i18n.changeLanguage("fr");
+    const root = document.createElement("div");
+    const preview = fakeRenderPreview();
+    const theStage = stage();
+
+    renderModelEditor(root, theStage, { renderPreview: preview.fn });
+    expect(preview.fn).toHaveBeenCalledTimes(1);
+
+    // Same root, same stage reference: the caller's own onLocaleChange
+    // subscription just re-invokes this exact call, mirroring every other
+    // full-list-rebuild trigger this session already reuses (see
+    // .vibe/decisions/008). The existing session/preview must survive
+    // untouched -- only the static panels rebuild.
+    renderModelEditor(root, theStage, { renderPreview: preview.fn });
+
+    const headings = Array.from(root.querySelectorAll("h2")).map(
+      (h) => h.textContent,
+    );
+    expect(headings).toEqual([
+      "Placement du modèle 3D",
+      "Éclairage 3D",
+      "Caméra 3D",
+      "Mise à l'échelle en perspective",
+      "Profondeur de départ des joueurs",
+    ]);
+    // No fresh/torn-down preview mount was triggered by the second call.
+    expect(preview.fn).toHaveBeenCalledTimes(1);
+
+    await i18n.changeLanguage("en");
   });
 });

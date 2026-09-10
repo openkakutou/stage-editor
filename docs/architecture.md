@@ -18,12 +18,17 @@ flowchart LR
     app --> wizard["wizard\n(src/wizard/)"]
     app --> editor["editor\n(src/editor/)"]
     app --> shortcuts["shortcuts\n(src/shortcuts/)"]
+    app --> i18n["i18n\n(src/i18n/)"]
     input --> wasm["wasm\n(src/wasm/)"]
     input --> document["document\n(src/document/)"]
+    input --> i18n
     wizard --> document
+    wizard --> i18n
     editor --> wasm
     editor --> document
+    editor --> i18n
     shortcuts -.->|"ShortcutManager,\n<wuik-shortcuts-panel>"| wuikKit["@openkakutou/web-ui-kit"]
+    i18n -.->|"initI18n, t,\nonLocaleChange,\n<wuik-locale-switcher>"| wuikKit
     wasm -.->|fetch + WebAssembly.instantiate| module["stage.wasm\n(public/wasm/, gitignored)"]
     editor -.->|fetch + WebAssembly.instantiate| sffModule["sff.wasm\n(public/wasm/sff/, gitignored)"]
     editor -.->|dynamic import, only once a 3D\nmodel is actually assigned| three["three (npm)"]
@@ -50,7 +55,10 @@ flowchart LR
   positive feedback. `mountDocument` also clears the shared undo/redo
   history before storing the new document — see "Undo/redo" below. `app`
   also owns the single `window` `keydown` listener that dispatches every
-  registered shortcut — see "Keyboard shortcuts" below. No sidebar/tabs
+  registered shortcut — see "Keyboard shortcuts" below. `app` also mounts
+  a `<wuik-locale-switcher>` in the toolbar and owns the top-level
+  locale-change subscription that retranslates the pieces of "chrome" it
+  builds directly — see "Localization (i18n)" below. No sidebar/tabs
   slotted yet.
 - **`input`** (`src/input/`) — the stage folder input (backlog item 002).
   `folder-entries.ts` gathers files from a folder selection or a
@@ -118,6 +126,12 @@ flowchart LR
   guaranteed compatible with the Go toolchain version that built the
   `.wasm` binary shipped next to it) never collide. Neither needs a Go
   toolchain or a sibling checkout of either repo.
+- **`i18n`** (`src/i18n/`) — this app's localization setup (backlog item
+  010): wires the shared `@openkakutou/web-ui-kit` i18next integration
+  layer under this app's own namespace (`stage-editor`) and its own
+  `localStorage` key (`stage-editor-locale`), plus a `t()` wrapper that
+  falls back to a plain interpolated default value before the app has
+  initialized — see "Localization (i18n)" below.
 - **`editor`** (`src/editor/`) — the editing screens. `characteristics-editor.ts`
   (backlog item 003) edits a loaded stage's name, author, camera bounds,
   and stage boundaries. `elements-editor.ts` (backlog item 003) lists the
@@ -414,3 +428,66 @@ a full fresh serialize instead, not a line-level patch: this is `stage`'s
 own deliberate, already-documented trade-off (mirroring `character`'s
 identical contract), not a shortfall of this app's own save path — see
 `.vibe/decisions/002-single-field-edit-produces-a-full-fresh-serialize-not-a-line-patch.md`.
+
+## Localization (i18n) (backlog item 010)
+
+Every user-facing string in this app lives in `src/i18n/en.json`/`fr.json`,
+looked up through `i18n.ts`'s `t(key, defaultValue, vars?)` wrapper around
+`@openkakutou/web-ui-kit`'s shared i18next integration layer. `app`'s
+`mount()` calls `initAppI18n()` once, awaited before the very first
+`renderApp`, so the first paint already shows the detected/persisted
+language with no English flash; every render function called directly
+(as every existing test does) stays synchronous and falls back to `t()`'s
+own interpolated `defaultValue` if i18n hasn't initialized yet in that
+page. See `.vibe/decisions/008-i18n-integration-approach.md` for the full
+design, adapted from `lifebar-editor`'s own identical item.
+
+- The app's own brand name ("Stage Editor") and raw stage data (an
+  element's name, its `type` enum value, numeric coordinates) are never
+  translated — only the surrounding UI copy is.
+- A `<wuik-locale-switcher>` in the toolbar (`app`) lists the available
+  languages and switches the active one live, with no page reload. The
+  language is detected from the browser by default and a manual choice
+  persists across reloads under this app's own `localStorage` key
+  (`stage-editor-locale`, distinct from `@openkakutou/web-ui-kit`'s
+  shared default — every OpenKakutou app deploys on the same GitHub
+  Pages origin, so sharing the default key would leak one app's language
+  choice into every other one).
+- Live locale-switching is split by how much state a re-render would
+  otherwise destroy:
+  - `characteristics-editor.ts`, `model-editor.ts`'s static panels, and
+    `new-stage-wizard.ts` hold no locale-sensitive state of their own —
+    `app`'s own locale-change subscription just re-invokes their
+    existing render calls from the currently loaded stage. The 3D live
+    preview's own mounted session survives this untouched, since its
+    container is re-parented, never recreated (see "3D model preview"
+    above).
+  - `elements-editor.ts` keeps its selection and expanded-rows state
+    exactly as `app` already threads it through every other full-list
+    rebuild trigger (a sprite sheet finishing decode) — a locale change
+    is one more such trigger, reusing the same `rerenderElements`
+    closure.
+  - `stage-file-input-view.ts` and `save-export.ts` each keep their
+    currently-shown status/error text as a small unformatted descriptor,
+    not a pre-formatted string, and subscribe to `onLocaleChange`
+    internally to re-format it (plus every static label/button) in
+    place, without re-running the load/save that produced it.
+  - `model-preview.ts`'s own failure banner (WebGL unavailable, model
+    load error) is the only translated text inside the live 3D preview
+    — recomputed from a small stored "describe the current failure"
+    closure and rebuilt on a locale change; the mounted scene/camera
+    itself is never touched.
+  - `shortcuts-panel-section.ts` retranslates only its own collapsible
+    header label in place, leaving its collapsed/expanded state
+    untouched.
+  - The Undo/Redo and Save/Export buttons' shortcut-hint `title`/
+    `aria-keyshortcuts` are recomputed directly by `app` (reading the
+    shortcut manager's live binding plus a freshly translated label)
+    rather than by re-calling `bindShortcutLabel`, which would attach a
+    second `"change"` listener onto the shared, long-lived
+    `appShortcutManager` on every language switch.
+- The keyboard-shortcut actions registered with the shared
+  `ShortcutManager` (shown inside `<wuik-shortcuts-panel>`'s own rebind
+  list) stay hardcoded English — that shared component has no
+  live-retranslation hook of its own, the same accepted gap
+  `lifebar-editor` already shipped with for its own identical item.

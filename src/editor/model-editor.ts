@@ -24,6 +24,7 @@
 // while Camera/Scaling/PlayerStartZ stay visible regardless (point 3);
 // YShift is edited but never applied to the preview (point 6); Scaling and
 // PlayerStartZ never trigger a preview update (point 7).
+import { t } from "../i18n/i18n.ts";
 import { readFileAsBytes as defaultReadFileBytes } from "../input/stage-file-input.ts";
 import type { BGdef, PlayerStartZ, Scaling, StageData } from "../wasm/types.ts";
 import {
@@ -174,12 +175,13 @@ function buildModelPanel(
   const panel = document.createElement("wuik-panel");
   panel.className = "model-editor__panel model-editor__model";
   const title = document.createElement("h2");
-  title.textContent = "3D Model Placement";
+  title.textContent = t("model.modelPlacementHeading", "3D Model Placement");
   panel.appendChild(title);
 
   panel.appendChild(
     buildAssetField({
       kindLabel: "model",
+      kind: "model",
       accept: ".gltf,.glb",
       referencedName: stage.bgDef.modelFile,
       loadedThisSession: session.modelBytes !== null,
@@ -204,15 +206,17 @@ function buildModelPanel(
   if (stage.bgDef.modelFile === "") {
     const hint = document.createElement("p");
     hint.className = "model-editor__hint";
-    hint.textContent =
-      "Assign a model file to edit its placement — any previously tuned values are kept.";
+    hint.textContent = t(
+      "model.assignHint",
+      "Assign a model file to edit its placement — any previously tuned values are kept.",
+    );
     panel.appendChild(hint);
   }
 
   if (session.modelBytes !== null) {
     const fields = document.createElement("div");
     fields.className = "model-editor__field-grid";
-    for (const { field, label } of MODEL_OFFSET_FIELDS) {
+    for (const { field, label } of modelOffsetFields()) {
       fields.appendChild(
         buildNumericField(
           `model.${field}`,
@@ -229,7 +233,7 @@ function buildModelPanel(
         ),
       );
     }
-    for (const { field, label } of MODEL_SCALE_FIELDS) {
+    for (const { field, label } of modelScaleFields()) {
       fields.appendChild(
         buildNumericField(
           `model.${field}`,
@@ -249,7 +253,7 @@ function buildModelPanel(
     fields.appendChild(
       buildNumericField(
         "model.environmentIntensity",
-        "Environment Intensity",
+        t("model.environmentIntensityLabel", "Environment Intensity"),
         stage.model.environmentIntensity,
         (value) => {
           stage.model.environmentIntensity = value;
@@ -271,12 +275,13 @@ function buildEnvironmentPanel(
   const panel = document.createElement("wuik-panel");
   panel.className = "model-editor__panel model-editor__environment";
   const title = document.createElement("h2");
-  title.textContent = "3D Lighting";
+  title.textContent = t("model.lightingHeading", "3D Lighting");
   panel.appendChild(title);
 
   panel.appendChild(
     buildAssetField({
       kindLabel: "lighting file",
+      kind: "environment",
       accept: ".hdr",
       referencedName: stage.model.environment,
       loadedThisSession: session.environmentBytes !== null,
@@ -302,7 +307,10 @@ function buildEnvironmentPanel(
 }
 
 interface AssetFieldOptions {
+  /** Used only to derive this field's `data-action` slug (e.g. `"remove-model"`, `"remove-lighting-file"`) -- never shown to the user. */
   kindLabel: string;
+  /** Selects which translated remove-confirm prompt to show (there is no live-retranslation hook for composing it from `kindLabel` itself). */
+  kind: "model" | "environment";
   accept: string;
   referencedName: string;
   loadedThisSession: boolean;
@@ -318,8 +326,14 @@ function buildAssetField(options: AssetFieldOptions): HTMLElement {
     const reference = document.createElement("p");
     reference.className = "model-editor__asset-reference";
     reference.textContent = options.loadedThisSession
-      ? `Assigned: ${options.referencedName}`
-      : `Referenced: ${options.referencedName} — select the file below to preview or edit it.`;
+      ? t("model.assignedLabel", "Assigned: {{name}}", {
+          name: options.referencedName,
+        })
+      : t(
+          "model.referencedLabel",
+          "Referenced: {{name}} — select the file below to preview or edit it.",
+          { name: options.referencedName },
+        );
     wrapper.appendChild(reference);
   }
 
@@ -335,7 +349,7 @@ function buildAssetField(options: AssetFieldOptions): HTMLElement {
 
   if (options.referencedName !== "") {
     wrapper.appendChild(
-      buildRemoveControl(options.kindLabel, options.onRemove),
+      buildRemoveControl(options.kindLabel, options.kind, options.onRemove),
     );
   }
 
@@ -344,6 +358,7 @@ function buildAssetField(options: AssetFieldOptions): HTMLElement {
 
 function buildRemoveControl(
   kindLabel: string,
+  kind: "model" | "environment",
   remove: () => void,
 ): HTMLElement {
   const container = document.createElement("div");
@@ -354,7 +369,7 @@ function buildRemoveControl(
     const removeButton = document.createElement("wuik-button");
     removeButton.setAttribute("variant", "secondary");
     removeButton.dataset.action = `remove-${kindLabel.replace(/\s+/g, "-")}`;
-    removeButton.textContent = "Remove";
+    removeButton.textContent = t("model.removeButton", "Remove");
     removeButton.addEventListener("click", renderConfirm);
     container.appendChild(removeButton);
   }
@@ -363,16 +378,25 @@ function buildRemoveControl(
     container.replaceChildren();
     const prompt = document.createElement("span");
     prompt.className = "model-editor__remove-confirm-prompt";
-    prompt.textContent = `Remove this ${kindLabel}?`;
+    prompt.textContent =
+      kind === "model"
+        ? t("model.removeConfirmPromptModel", "Remove this model?")
+        : t(
+            "model.removeConfirmPromptEnvironment",
+            "Remove this lighting file?",
+          );
     const confirmButton = document.createElement("wuik-button");
     confirmButton.setAttribute("variant", "danger");
     confirmButton.dataset.action = `confirm-remove-${kindLabel.replace(/\s+/g, "-")}`;
-    confirmButton.textContent = "Confirm remove";
+    confirmButton.textContent = t(
+      "model.confirmRemoveButton",
+      "Confirm remove",
+    );
     confirmButton.addEventListener("click", remove);
     const cancelButton = document.createElement("wuik-button");
     cancelButton.setAttribute("variant", "secondary");
     cancelButton.dataset.action = `cancel-remove-${kindLabel.replace(/\s+/g, "-")}`;
-    cancelButton.textContent = "Cancel";
+    cancelButton.textContent = t("model.cancelButton", "Cancel");
     cancelButton.addEventListener("click", renderIdle);
     container.append(prompt, confirmButton, cancelButton);
   }
@@ -384,35 +408,59 @@ function buildRemoveControl(
 type ModelOffsetField = "offsetX" | "offsetY" | "offsetZ";
 type ModelScaleField = "scaleX" | "scaleY" | "scaleZ";
 
-const MODEL_OFFSET_FIELDS: readonly {
+function modelOffsetFields(): readonly {
   field: ModelOffsetField;
   label: string;
-}[] = [
-  { field: "offsetX", label: "Offset X" },
-  { field: "offsetY", label: "Offset Y" },
-  { field: "offsetZ", label: "Offset Z" },
-];
-
-const MODEL_SCALE_FIELDS: readonly { field: ModelScaleField; label: string }[] =
-  [
-    { field: "scaleX", label: "Scale X" },
-    { field: "scaleY", label: "Scale Y" },
-    { field: "scaleZ", label: "Scale Z" },
+}[] {
+  return [
+    { field: "offsetX", label: t("model.offsetXLabel", "Offset X") },
+    { field: "offsetY", label: t("model.offsetYLabel", "Offset Y") },
+    { field: "offsetZ", label: t("model.offsetZLabel", "Offset Z") },
   ];
+}
+
+function modelScaleFields(): readonly {
+  field: ModelScaleField;
+  label: string;
+}[] {
+  return [
+    { field: "scaleX", label: t("model.scaleXLabel", "Scale X") },
+    { field: "scaleY", label: t("model.scaleYLabel", "Scale Y") },
+    { field: "scaleZ", label: t("model.scaleZLabel", "Scale Z") },
+  ];
+}
 
 type CameraField = "near" | "far" | "fov" | "yShift";
 
-const CAMERA_FIELDS: readonly {
+function cameraFields(): readonly {
   field: CameraField;
   label: string;
   livePreview: boolean;
-}[] = [
-  { field: "near", label: "Camera Near", livePreview: true },
-  { field: "far", label: "Camera Far", livePreview: true },
-  { field: "fov", label: "Camera Field Of View", livePreview: true },
-  // yShift is edited but never applied to the preview — see .vibe/decisions/004, point 6.
-  { field: "yShift", label: "Camera Y Shift", livePreview: false },
-];
+}[] {
+  return [
+    {
+      field: "near",
+      label: t("model.cameraNearLabel", "Camera Near"),
+      livePreview: true,
+    },
+    {
+      field: "far",
+      label: t("model.cameraFarLabel", "Camera Far"),
+      livePreview: true,
+    },
+    {
+      field: "fov",
+      label: t("model.cameraFovLabel", "Camera Field Of View"),
+      livePreview: true,
+    },
+    // yShift is edited but never applied to the preview — see .vibe/decisions/004, point 6.
+    {
+      field: "yShift",
+      label: t("model.cameraYShiftLabel", "Camera Y Shift"),
+      livePreview: false,
+    },
+  ];
+}
 
 function buildCameraPanel(
   bgDef: BGdef,
@@ -422,12 +470,12 @@ function buildCameraPanel(
   const panel = document.createElement("wuik-panel");
   panel.className = "model-editor__panel model-editor__camera";
   const title = document.createElement("h2");
-  title.textContent = "3D Camera";
+  title.textContent = t("model.cameraHeading", "3D Camera");
   panel.appendChild(title);
 
   const fields = document.createElement("div");
   fields.className = "model-editor__field-grid";
-  for (const { field, label, livePreview } of CAMERA_FIELDS) {
+  for (const { field, label, livePreview } of cameraFields()) {
     fields.appendChild(
       buildNumericField(
         `bgDef.${field}`,
@@ -454,13 +502,24 @@ type ScalingField =
   | "topScale"
   | "bottomScale";
 
-const SCALING_FIELDS: readonly { field: ScalingField; label: string }[] = [
-  { field: "depthToScreen", label: "Depth To Screen" },
-  { field: "topZ", label: "Top Z" },
-  { field: "bottomZ", label: "Bottom Z" },
-  { field: "topScale", label: "Top Scale" },
-  { field: "bottomScale", label: "Bottom Scale" },
-];
+function scalingFields(): readonly { field: ScalingField; label: string }[] {
+  return [
+    {
+      field: "depthToScreen",
+      label: t("model.scalingDepthToScreenLabel", "Depth To Screen"),
+    },
+    { field: "topZ", label: t("model.scalingTopZLabel", "Top Z") },
+    { field: "bottomZ", label: t("model.scalingBottomZLabel", "Bottom Z") },
+    {
+      field: "topScale",
+      label: t("model.scalingTopScaleLabel", "Top Scale"),
+    },
+    {
+      field: "bottomScale",
+      label: t("model.scalingBottomScaleLabel", "Bottom Scale"),
+    },
+  ];
+}
 
 function buildScalingPanel(
   scaling: Scaling,
@@ -469,7 +528,7 @@ function buildScalingPanel(
   const panel = document.createElement("wuik-panel");
   panel.className = "model-editor__panel model-editor__scaling";
   const title = document.createElement("h2");
-  title.textContent = "Perspective Scaling";
+  title.textContent = t("model.scalingHeading", "Perspective Scaling");
   panel.appendChild(title);
 
   const fields = document.createElement("div");
@@ -477,7 +536,7 @@ function buildScalingPanel(
   // Scaling never has a visual effect in this model-only preview — no
   // player sprites are rendered there — so no field here triggers a
   // preview update (.vibe/decisions/004, point 7).
-  for (const { field, label } of SCALING_FIELDS) {
+  for (const { field, label } of scalingFields()) {
     fields.appendChild(
       buildNumericField(
         `scaling.${field}`,
@@ -496,19 +555,19 @@ function buildScalingPanel(
 
 type PlayerStartZField = keyof PlayerStartZ;
 
-const PLAYER_START_Z_FIELDS: readonly {
+function playerStartZFields(): readonly {
   field: PlayerStartZField;
   label: string;
-}[] = [
-  { field: "p1", label: "Player 1 Start Z" },
-  { field: "p2", label: "Player 2 Start Z" },
-  { field: "p3", label: "Player 3 Start Z" },
-  { field: "p4", label: "Player 4 Start Z" },
-  { field: "p5", label: "Player 5 Start Z" },
-  { field: "p6", label: "Player 6 Start Z" },
-  { field: "p7", label: "Player 7 Start Z" },
-  { field: "p8", label: "Player 8 Start Z" },
-];
+}[] {
+  return (["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8"] as const).map(
+    (field, index) => ({
+      field,
+      label: t("model.playerStartZLabel", "Player {{n}} Start Z", {
+        n: String(index + 1),
+      }),
+    }),
+  );
+}
 
 function buildPlayerStartZPanel(
   playerStartZ: PlayerStartZ,
@@ -517,13 +576,13 @@ function buildPlayerStartZPanel(
   const panel = document.createElement("wuik-panel");
   panel.className = "model-editor__panel model-editor__player-start-z";
   const title = document.createElement("h2");
-  title.textContent = "Player Start Depth";
+  title.textContent = t("model.playerStartDepthHeading", "Player Start Depth");
   panel.appendChild(title);
 
   const fields = document.createElement("div");
   fields.className =
     "model-editor__field-grid model-editor__field-grid--players";
-  for (const { field, label } of PLAYER_START_Z_FIELDS) {
+  for (const { field, label } of playerStartZFields()) {
     fields.appendChild(
       buildNumericField(
         `playerStartZ.${field}`,
@@ -598,7 +657,9 @@ function buildNumericField(
   input.addEventListener("blur", () => {
     const value = Number(input.value);
     if (input.value.trim() === "" || Number.isNaN(value)) {
-      setInvalid(`${label} must be a number.`);
+      setInvalid(
+        t("common.numberRequired", "{{label}} must be a number.", { label }),
+      );
       return;
     }
     setInvalid(null);

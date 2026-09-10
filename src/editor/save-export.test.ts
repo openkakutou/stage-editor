@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { StageDocument } from "../document/stage-document-store.ts";
+import { initAppI18n } from "../i18n/i18n.ts";
 import type { SaveResult, StageData } from "../wasm/types.ts";
 import { renderSaveExport } from "./save-export.ts";
 
@@ -238,5 +239,37 @@ describe("renderSaveExport — trigger handle for the keyboard shortcut dispatch
 
     expect(() => handle.triggerSaveExport()).not.toThrow();
     expect(saveStage).not.toHaveBeenCalled();
+  });
+});
+
+describe("renderSaveExport — live locale switching (backlog item 010)", () => {
+  it("retranslates the button and the already-shown 'saved' status in place on a locale change", async () => {
+    const root = document.createElement("div");
+    const i18n = await initAppI18n();
+    const saveStage = vi
+      .fn()
+      .mockResolvedValue({ ok: true, bytes: new Uint8Array() } as SaveResult);
+
+    const handle = renderSaveExport(root, {
+      getStageDocument: () => document_({ fileName: "arena.def" }),
+      saveStage,
+      triggerDownload: vi.fn(),
+    });
+    handle.triggerSaveExport();
+    await vi.waitFor(() => {
+      expect(root.querySelector(".save-export__status")?.textContent).toBe(
+        "Saved arena.def.",
+      );
+    });
+
+    await i18n.changeLanguage("fr");
+
+    expect(handle.button.textContent).toBe("Enregistrer / Exporter");
+    expect(root.querySelector(".save-export__status")?.textContent).toBe(
+      "arena.def enregistré.",
+    );
+
+    handle.unsubscribeLocale();
+    await i18n.changeLanguage("en");
   });
 });

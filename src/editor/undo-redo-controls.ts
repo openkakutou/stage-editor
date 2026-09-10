@@ -7,6 +7,7 @@
 // own identical `src/editor/undo-redo-controls.ts`.
 import type { CommandStack } from "@openkakutou/web-ui-kit";
 import { commandStack as defaultCommandStack } from "../document/command-stack-store.ts";
+import { t } from "../i18n/i18n.ts";
 
 export interface UndoRedoControlsOptions {
   /** The history to control. Defaults to this app's shared instance; injectable for testing. */
@@ -47,12 +48,12 @@ export function renderUndoRedoControls(
   const undoButton = document.createElement("wuik-button");
   undoButton.setAttribute("variant", "secondary");
   undoButton.dataset.action = "undo";
-  undoButton.textContent = "Undo";
+  undoButton.textContent = t("actions.undo", "Undo");
 
   const redoButton = document.createElement("wuik-button");
   redoButton.setAttribute("variant", "secondary");
   redoButton.dataset.action = "redo";
-  redoButton.textContent = "Redo";
+  redoButton.textContent = t("actions.redo", "Redo");
 
   function refresh(): void {
     undoButton.toggleAttribute("disabled", !stack.canUndo);

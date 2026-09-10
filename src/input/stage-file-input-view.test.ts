@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { initAppI18n } from "../i18n/i18n.ts";
 import { resetWasmBridgeForTests } from "../wasm/bridge.ts";
 import type { WasmBridgeOptions } from "../wasm/bridge.ts";
 import { renderStageFileInput } from "./stage-file-input-view.ts";
@@ -246,5 +247,36 @@ describe("renderStageFileInput", () => {
     expect(
       status(root).classList.contains("stage-file-input__status--error"),
     ).toBe(false);
+  });
+});
+
+describe("renderStageFileInput — live locale switching (backlog item 010)", () => {
+  it("retranslates static labels and an already-shown status/error in place, without re-running the load", async () => {
+    const i18n = await initAppI18n();
+    const root = document.createElement("div");
+    renderStageFileInput(root, {
+      onLoaded: vi.fn(),
+      bridgeOptions: testBridgeOptions,
+    });
+
+    await selectViaPicker(root, [
+      withRelativePath(makeFile("readme.txt"), "pack/readme.txt"),
+    ]);
+    expect(status(root).textContent).toBe(
+      "No .def file found in this folder — expected one like stage.def.",
+    );
+
+    await i18n.changeLanguage("fr");
+
+    expect(
+      root.querySelector<HTMLElement>(".stage-file-input__label")?.textContent,
+    ).toBe(
+      "Sélectionnez un dossier de stage (contenant son fichier .def, par ex. stage.def)",
+    );
+    expect(status(root).textContent).toBe(
+      "Aucun fichier .def trouvé dans ce dossier — un fichier comme stage.def est attendu.",
+    );
+
+    await i18n.changeLanguage("en");
   });
 });

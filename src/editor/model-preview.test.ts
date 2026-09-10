@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { initAppI18n } from "../i18n/i18n.ts";
 import type { LoadedModel } from "./model-preview.ts";
 import { renderModelPreview } from "./model-preview.ts";
 
@@ -101,6 +102,34 @@ describe("renderModelPreview — success path", () => {
       expect(root.querySelector(".model-preview__error")).not.toBeNull();
     });
     expect(root.querySelector("wuik-viewport-3d")).toBeNull();
+  });
+
+  it("retranslates the failure banner in place on a locale change (backlog item 010)", async () => {
+    const i18n = await initAppI18n();
+    const root = document.createElement("div");
+    const createRenderer = vi.fn().mockReturnValue(null);
+
+    renderModelPreview(
+      root,
+      { modelBytes, environmentBytes: null },
+      defaultTransform,
+      defaultCamera,
+      { createRenderer },
+    );
+    await vi.waitFor(() => {
+      expect(root.querySelector(".model-preview__error")).not.toBeNull();
+    });
+
+    await i18n.changeLanguage("fr");
+
+    expect(
+      root.querySelector(".model-preview__error-heading")?.textContent,
+    ).toBe("Aperçu 3D indisponible");
+    expect(root.querySelector(".model-preview__error-body")?.textContent).toBe(
+      "Ce navigateur ou cet environnement n'a pas pu créer de rendu WebGL pour l'aperçu 3D.",
+    );
+
+    await i18n.changeLanguage("en");
   });
 
   it("shows a failure banner when the glTF fails to load, and disposes the renderer", async () => {

@@ -10,6 +10,7 @@ import {
   hasUnsavedStageChanges,
   resetStageDocumentForTests,
 } from "./document/stage-document-store.ts";
+import { initAppI18n } from "./i18n/i18n.ts";
 import { renderApp } from "./main.ts";
 import { appShortcutManager } from "./shortcuts/app-shortcut-manager.ts";
 import { resetWasmBridgeForTests } from "./wasm/bridge.ts";
@@ -624,7 +625,47 @@ describe("renderApp — shortcuts panel and discoverability (backlog item 009)",
   });
 });
 
-/** Shared `beforeEach` for the two describe blocks above -- a tiny local helper so it isn't repeated twice. */
+describe("renderApp — live locale switching (backlog item 010)", () => {
+  beforeEachResets();
+
+  it("mounts a translated <wuik-locale-switcher> and retranslates the toolbar and editors on a locale change", async () => {
+    const i18n = await initAppI18n();
+    const root = document.createElement("div");
+    renderApp(root, "0.1.0");
+
+    const switcher = root.querySelector("wuik-locale-switcher");
+    expect(switcher).not.toBeNull();
+    expect(switcher?.getAttribute("label")).toBe("Language");
+
+    blankStageButton(root).click();
+    const nameLabel = root.querySelector(
+      'label[for="characteristics-editor-name"]',
+    );
+    expect(nameLabel?.textContent).toBe("Name");
+
+    await i18n.changeLanguage("fr");
+
+    expect(switcher?.getAttribute("label")).toBe("Langue");
+    expect(root.querySelector('[data-action="undo"]')?.textContent).toBe(
+      "Annuler",
+    );
+    expect(root.querySelector('[data-action="redo"]')?.textContent).toBe(
+      "Rétablir",
+    );
+    expect(
+      root.querySelector('label[for="characteristics-editor-name"]')
+        ?.textContent,
+    ).toBe("Nom");
+    expect(root.querySelector('[data-action="add-element"]')?.textContent).toBe(
+      "Ajouter un élément",
+    );
+    expect(blankStageButton(root).textContent).toBe("Stage vierge");
+
+    await i18n.changeLanguage("en");
+  });
+});
+
+/** Shared `beforeEach` for the describe blocks above that need it -- a tiny local helper so it isn't repeated. */
 function beforeEachResets(): void {
   beforeEach(() => {
     resetStageDocumentForTests();

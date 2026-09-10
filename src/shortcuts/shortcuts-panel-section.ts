@@ -14,6 +14,7 @@ import type {
   ShortcutManager,
   WuikShortcutsPanelElement,
 } from "@openkakutou/web-ui-kit";
+import { onLocaleChange, t } from "../i18n/i18n.ts";
 
 export interface ShortcutsPanelSectionOptions {
   /** @default true -- see this module's top comment. */
@@ -49,7 +50,7 @@ export function renderShortcutsPanelSection(
   toggle.setAttribute("aria-expanded", String(expanded));
 
   const label = document.createElement("span");
-  label.textContent = "Keyboard Shortcuts";
+  label.textContent = t("shortcuts.heading", "Keyboard Shortcuts");
   toggle.appendChild(label);
 
   const body = document.createElement("div");
@@ -73,6 +74,15 @@ export function renderShortcutsPanelSection(
 
   panel.append(toggle, body);
   root.appendChild(panel);
+
+  // This section is only ever mounted once per real app session -- one
+  // subscription for its whole lifetime never accumulates in practice.
+  // Re-translates only the header label in place, leaving `body.hidden` (a
+  // manually collapsed/expanded state) untouched. Mirrors `lifebar-editor`'s
+  // own identical choice; see .vibe/decisions/008-i18n-integration-approach.md.
+  onLocaleChange(() => {
+    label.textContent = t("shortcuts.heading", "Keyboard Shortcuts");
+  });
 
   return shortcutsPanel;
 }

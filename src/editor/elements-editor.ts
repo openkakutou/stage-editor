@@ -51,6 +51,7 @@
 // `rerender()`, same as any other structural change, since it can touch
 // many rows' displayed values at once.
 import type { Command } from "@openkakutou/web-ui-kit";
+import { t } from "../i18n/i18n.ts";
 import type { Sprite, SpriteGroup } from "../wasm/sff-types.ts";
 import type {
   BGElement,
@@ -132,6 +133,10 @@ function elementCoalesceScope(el: BGElement): number {
     elementIds.set(el, id);
   }
   return id;
+}
+
+function displayName(el: BGElement): string {
+  return el.name || t("elements.unnamed", "(unnamed)");
 }
 
 const UNSET_SPRITE: SpriteRef = Object.freeze({ group: -1, image: -1 });
@@ -227,7 +232,9 @@ export function renderElementsEditor(
   }
 
   const heading = document.createElement("h2");
-  heading.textContent = `BG Elements (${elements().length})`;
+  heading.textContent = t("elements.heading", "BG Elements ({{count}})", {
+    count: String(elements().length),
+  });
   panel.appendChild(heading);
 
   const deletionStatusEl = document.createElement("p");
@@ -403,7 +410,14 @@ export function renderElementsEditor(
           selectedElements.delete(m.element);
           if (lastClickedElement === m.element) lastClickedElement = null;
         }
-        deletionStatus.text = `Deleted ${meta.length} element${meta.length === 1 ? "" : "s"}. Use Undo to restore.`;
+        deletionStatus.text = t(
+          "elements.deletedStatus",
+          "Deleted {{count}} element{{suffix}}. Use Undo to restore.",
+          {
+            count: String(meta.length),
+            suffix: meta.length === 1 ? "" : "s",
+          },
+        );
       }
       rerender();
     };
@@ -543,7 +557,7 @@ export function renderElementsEditor(
   const addButton = document.createElement("wuik-button");
   addButton.setAttribute("variant", "secondary");
   addButton.dataset.action = "add-element";
-  addButton.textContent = "Add element";
+  addButton.textContent = t("elements.addElementButton", "Add element");
   addButton.addEventListener("click", triggerAddElement);
   panel.appendChild(addButton);
 
@@ -591,7 +605,9 @@ function buildRow(
   checkbox.checked = selected;
   checkbox.setAttribute(
     "aria-label",
-    `Select ${el.name || "(unnamed)"} for batch editing`,
+    t("elements.selectAriaLabel", "Select {{name}} for batch editing", {
+      name: displayName(el),
+    }),
   );
   // Neither branch calls `preventDefault` -- doing so on *either* a plain
   // or a Shift-modified checkbox click/Space triggers the browser's own
@@ -665,19 +681,27 @@ function updateSummaryText(
   spriteGroups: SpriteGroup[] | null,
 ): void {
   const parts = [
-    el.name || "(unnamed)",
+    displayName(el),
     el.type,
-    `layer ${el.layerNo}`,
-    `(${el.startX}, ${el.startY})`,
+    t("elements.summaryLayer", "layer {{layerNo}}", {
+      layerNo: String(el.layerNo),
+    }),
+    t("elements.summaryPosition", "({{startX}}, {{startY}})", {
+      startX: String(el.startX),
+      startY: String(el.startY),
+    }),
   ];
   if (el.type === "normal" || el.type === "parallax") {
     const status = resolveSpriteRefStatus(el.sprite, spriteGroups);
     parts.push(
       status.kind === "invalid"
-        ? "invalid sprite reference"
+        ? t("elements.summaryInvalidSprite", "invalid sprite reference")
         : status.kind === "unset"
-          ? "no sprite assigned"
-          : `sprite ${el.sprite.group},${el.sprite.image}`,
+          ? t("elements.summaryNoSprite", "no sprite assigned")
+          : t("elements.summarySprite", "sprite {{group}},{{image}}", {
+              group: String(el.sprite.group),
+              image: String(el.sprite.image),
+            }),
     );
   }
   summary.textContent = parts.join(" · ");
@@ -693,7 +717,7 @@ function buildRemoveControl(
     const removeButton = document.createElement("wuik-button");
     removeButton.setAttribute("variant", "secondary");
     removeButton.dataset.action = "remove-element";
-    removeButton.textContent = "Remove";
+    removeButton.textContent = t("elements.removeButton", "Remove");
     removeButton.addEventListener("click", () => {
       if (touchedElements.has(el)) {
         renderConfirm();
@@ -708,16 +732,22 @@ function buildRemoveControl(
     container.replaceChildren();
     const prompt = document.createElement("span");
     prompt.className = "elements-editor__remove-confirm-prompt";
-    prompt.textContent = "Remove this element?";
+    prompt.textContent = t(
+      "elements.removeConfirmPrompt",
+      "Remove this element?",
+    );
     const confirmButton = document.createElement("wuik-button");
     confirmButton.setAttribute("variant", "danger");
     confirmButton.dataset.action = "confirm-remove-element";
-    confirmButton.textContent = "Confirm remove";
+    confirmButton.textContent = t(
+      "elements.confirmRemoveButton",
+      "Confirm remove",
+    );
     confirmButton.addEventListener("click", remove);
     const cancelButton = document.createElement("wuik-button");
     cancelButton.setAttribute("variant", "secondary");
     cancelButton.dataset.action = "cancel-remove-element";
-    cancelButton.textContent = "Cancel";
+    cancelButton.textContent = t("elements.cancelButton", "Cancel");
     cancelButton.addEventListener("click", renderIdle);
     container.append(prompt, confirmButton, cancelButton);
   }
@@ -749,7 +779,7 @@ function buildBody(
   body.appendChild(
     buildTextField(
       "name",
-      "Name",
+      t("elements.nameLabel", "Name"),
       el.name,
       (value) => {
         el.name = value;
@@ -764,6 +794,9 @@ function buildBody(
   const typeSelect = document.createElement("select");
   typeSelect.className = "elements-editor__input";
   typeSelect.dataset.field = "type";
+  // The element's `type` enum values ("normal"/"parallax"/"anim") are raw
+  // stage data (this format's own vocabulary), never translated -- same
+  // rule as every other raw domain value in this app.
   for (const value of ["normal", "parallax", "anim"] as BGElementType[]) {
     const option = document.createElement("option");
     option.value = value;
@@ -783,7 +816,7 @@ function buildBody(
     apply(newValue);
     onChange(fieldCommand({ oldValue, newValue, apply }));
   });
-  body.appendChild(wrapField("Type", typeSelect));
+  body.appendChild(wrapField(t("elements.typeLabel", "Type"), typeSelect));
 
   if (el.type === "normal" || el.type === "parallax") {
     body.appendChild(
@@ -794,7 +827,7 @@ function buildBody(
     body.appendChild(
       buildNumericField(
         "actionNumber",
-        "Action number",
+        t("elements.actionNumberLabel", "Action number"),
         el.actionNumber,
         (v) => {
           el.actionNumber = v;
@@ -810,8 +843,8 @@ function buildBody(
   layerSelect.className = "elements-editor__input";
   layerSelect.dataset.field = "layerNo";
   for (const [value, label] of [
-    ["0", "Behind characters"],
-    ["1", "In front of characters"],
+    ["0", t("elements.layerBehind", "Behind characters")],
+    ["1", t("elements.layerFront", "In front of characters")],
   ]) {
     const option = document.createElement("option");
     option.value = value;
@@ -832,12 +865,12 @@ function buildBody(
     apply(newValue);
     onChange(fieldCommand({ oldValue, newValue, apply }));
   });
-  body.appendChild(wrapField("Layer", layerSelect));
+  body.appendChild(wrapField(t("elements.layerLabel", "Layer"), layerSelect));
 
   body.appendChild(
     buildNumericField(
       "startX",
-      "Start X",
+      t("elements.startXLabel", "Start X"),
       el.startX,
       (v) => {
         el.startX = v;
@@ -851,7 +884,7 @@ function buildBody(
   body.appendChild(
     buildNumericField(
       "startY",
-      "Start Y",
+      t("elements.startYLabel", "Start Y"),
       el.startY,
       (v) => {
         el.startY = v;
@@ -867,7 +900,7 @@ function buildBody(
     body.appendChild(
       buildNumericField(
         "deltaX",
-        "Parallax delta X",
+        t("elements.parallaxDeltaXLabel", "Parallax delta X"),
         el.deltaX,
         (v) => {
           el.deltaX = v;
@@ -880,7 +913,7 @@ function buildBody(
     body.appendChild(
       buildNumericField(
         "deltaY",
-        "Parallax delta Y",
+        t("elements.parallaxDeltaYLabel", "Parallax delta Y"),
         el.deltaY,
         (v) => {
           el.deltaY = v;
@@ -895,7 +928,7 @@ function buildBody(
   body.appendChild(
     buildNumericField(
       "tileX",
-      "Tile X count",
+      t("elements.tileXLabel", "Tile X count"),
       el.tileX,
       (v) => {
         el.tileX = v;
@@ -908,7 +941,7 @@ function buildBody(
   body.appendChild(
     buildNumericField(
       "tileY",
-      "Tile Y count",
+      t("elements.tileYLabel", "Tile Y count"),
       el.tileY,
       (v) => {
         el.tileY = v;
@@ -921,7 +954,7 @@ function buildBody(
   body.appendChild(
     buildNumericField(
       "tileSpacingX",
-      "Tile spacing X",
+      t("elements.tileSpacingXLabel", "Tile spacing X"),
       el.tileSpacingX,
       (v) => {
         el.tileSpacingX = v;
@@ -934,7 +967,7 @@ function buildBody(
   body.appendChild(
     buildNumericField(
       "tileSpacingY",
-      "Tile spacing Y",
+      t("elements.tileSpacingYLabel", "Tile spacing Y"),
       el.tileSpacingY,
       (v) => {
         el.tileSpacingY = v;
@@ -1023,7 +1056,11 @@ function buildNumericField(
       input.classList.add("is-invalid");
       input.setAttribute("aria-invalid", "true");
       errorEl.hidden = false;
-      errorEl.textContent = `${label} must be a number.`;
+      errorEl.textContent = t(
+        "common.numberRequired",
+        "{{label}} must be a number.",
+        { label },
+      );
       return;
     }
     input.classList.remove("is-invalid");
@@ -1073,17 +1110,25 @@ function buildSpritePicker(
   if (status.kind === "loading") {
     select.disabled = true;
     const option = document.createElement("option");
-    option.textContent = "Loading sprite sheet…";
+    option.textContent = t(
+      "elements.loadingSpriteSheet",
+      "Loading sprite sheet…",
+    );
     select.appendChild(option);
-    return wrapField("Sprite reference", select);
+    return wrapField(
+      t("elements.spriteReferenceLabel", "Sprite reference"),
+      select,
+    );
   }
 
   const placeholder = document.createElement("option");
   placeholder.value = UNSET_OPTION_VALUE;
   placeholder.textContent =
     status.kind === "invalid"
-      ? `Invalid reference: ${el.sprite.group},${el.sprite.image}`
-      : "— none —";
+      ? t("elements.invalidReferenceOption", "Invalid reference: {{value}}", {
+          value: `${el.sprite.group},${el.sprite.image}`,
+        })
+      : t("elements.noneOption", "— none —");
   select.appendChild(placeholder);
 
   for (const group of spriteGroups ?? []) {
@@ -1091,7 +1136,16 @@ function buildSpritePicker(
       const option = document.createElement("option");
       const optionValue = `${sprite.group},${sprite.image}`;
       option.value = optionValue;
-      option.textContent = `${sprite.group}, ${sprite.image} (${sprite.width}×${sprite.height})`;
+      option.textContent = t(
+        "elements.spriteOptionLabel",
+        "{{group}}, {{image}} ({{width}}×{{height}})",
+        {
+          group: String(sprite.group),
+          image: String(sprite.image),
+          width: String(sprite.width),
+          height: String(sprite.height),
+        },
+      );
       select.appendChild(option);
     }
   }
@@ -1112,7 +1166,11 @@ function buildSpritePicker(
   errorEl.className = "elements-editor__field-error";
   errorEl.hidden = status.kind !== "invalid";
   if (status.kind === "invalid") {
-    errorEl.textContent = `"${el.sprite.group},${el.sprite.image}" does not match any sprite in the loaded sheet.`;
+    errorEl.textContent = t(
+      "elements.spriteMismatch",
+      '"{{value}}" does not match any sprite in the loaded sheet.',
+      { value: `${el.sprite.group},${el.sprite.image}` },
+    );
   }
 
   select.addEventListener("change", () => {
@@ -1137,7 +1195,10 @@ function buildSpritePicker(
     onChange(fieldCommand({ oldValue, newValue, apply }));
   });
 
-  const wrapper = wrapField("Sprite reference", select);
+  const wrapper = wrapField(
+    t("elements.spriteReferenceLabel", "Sprite reference"),
+    select,
+  );
   wrapper.appendChild(errorEl);
   return wrapper;
 }
@@ -1184,7 +1245,10 @@ function renderBatchToolbar(
   const clearButton = document.createElement("wuik-button");
   clearButton.setAttribute("variant", "secondary");
   clearButton.dataset.action = "clear-selection";
-  clearButton.textContent = "Clear selection";
+  clearButton.textContent = t(
+    "elements.batch.clearSelectionButton",
+    "Clear selection",
+  );
   clearButton.addEventListener("click", options.onClearSelection);
   toolbar.appendChild(clearButton);
 
@@ -1203,7 +1267,11 @@ function renderBatchToolbar(
   const deleteButton = document.createElement("wuik-button");
   deleteButton.setAttribute("variant", "danger");
   deleteButton.dataset.action = "delete-selection";
-  deleteButton.textContent = `Delete ${selectedElements.size} selected`;
+  deleteButton.textContent = t(
+    "elements.batch.deleteSelectedButton",
+    "Delete {{count}} selected",
+    { count: String(selectedElements.size) },
+  );
   deleteButton.addEventListener("click", options.onDeleteSelection);
   deleteWrapper.appendChild(deleteButton);
   toolbar.appendChild(deleteWrapper);
@@ -1218,11 +1286,20 @@ function describeSelection(
 ): string {
   const MAX_NAMES_SHOWN = 5;
   const ordered = elements.filter((el) => selectedElements.has(el));
-  const names = ordered.map((el) => el.name || "(unnamed)");
+  const names = ordered.map((el) => displayName(el));
   const shown = names.slice(0, MAX_NAMES_SHOWN);
   const remaining = names.length - shown.length;
-  const suffix = remaining > 0 ? `, +${remaining} more` : "";
-  return `${ordered.length} selected: ${shown.join(", ")}${suffix}`;
+  const suffix =
+    remaining > 0
+      ? t("elements.batch.moreSuffix", ", +{{count}} more", {
+          count: String(remaining),
+        })
+      : "";
+  return t(
+    "elements.batch.selectionSummary",
+    "{{count}} selected: {{names}}{{suffix}}",
+    { count: String(ordered.length), names: shown.join(", "), suffix },
+  );
 }
 
 function buildBatchOffsetControl(
@@ -1248,7 +1325,10 @@ function buildBatchOffsetControl(
   const applyButton = document.createElement("wuik-button");
   applyButton.setAttribute("variant", "secondary");
   applyButton.dataset.action = "apply-offset";
-  applyButton.textContent = "Apply offset";
+  applyButton.textContent = t(
+    "elements.batch.applyOffsetButton",
+    "Apply offset",
+  );
 
   function refreshApplyDisabled(): void {
     const deltaX = Number(deltaXInput.value);
@@ -1268,8 +1348,14 @@ function buildBatchOffsetControl(
   });
 
   container.append(
-    wrapField("Position offset X", deltaXInput),
-    wrapField("Position offset Y", deltaYInput),
+    wrapField(
+      t("elements.batch.offsetXLabel", "Position offset X"),
+      deltaXInput,
+    ),
+    wrapField(
+      t("elements.batch.offsetYLabel", "Position offset Y"),
+      deltaYInput,
+    ),
     applyButton,
   );
   return container;
@@ -1288,12 +1374,18 @@ function buildBatchSpriteControl(
 
   const placeholder = document.createElement("option");
   placeholder.value = BATCH_SPRITE_NOT_CHOSEN;
-  placeholder.textContent = "Choose a sprite to apply…";
+  placeholder.textContent = t(
+    "elements.batch.chooseSpriteOption",
+    "Choose a sprite to apply…",
+  );
   select.appendChild(placeholder);
 
   const clearOption = document.createElement("option");
   clearOption.value = UNSET_OPTION_VALUE;
-  clearOption.textContent = "— none (clear sprite) —";
+  clearOption.textContent = t(
+    "elements.batch.clearSpriteOption",
+    "— none (clear sprite) —",
+  );
   select.appendChild(clearOption);
 
   for (const group of spriteGroups ?? []) {
@@ -1301,7 +1393,16 @@ function buildBatchSpriteControl(
       const option = document.createElement("option");
       const optionValue = `${sprite.group},${sprite.image}`;
       option.value = optionValue;
-      option.textContent = `${sprite.group}, ${sprite.image} (${sprite.width}×${sprite.height})`;
+      option.textContent = t(
+        "elements.spriteOptionLabel",
+        "{{group}}, {{image}} ({{width}}×{{height}})",
+        {
+          group: String(sprite.group),
+          image: String(sprite.image),
+          width: String(sprite.width),
+          height: String(sprite.height),
+        },
+      );
       select.appendChild(option);
     }
   }
@@ -1311,7 +1412,10 @@ function buildBatchSpriteControl(
   applyButton.dataset.action = "apply-sprite";
   applyButton.toggleAttribute("disabled", true);
 
-  applyButton.textContent = "Apply sprite";
+  applyButton.textContent = t(
+    "elements.batch.applySpriteButton",
+    "Apply sprite",
+  );
 
   select.addEventListener("change", () => {
     applyButton.toggleAttribute(
@@ -1326,6 +1430,12 @@ function buildBatchSpriteControl(
     onApplySprite({ group, image });
   });
 
-  container.append(wrapField("Sprite reference", select), applyButton);
+  container.append(
+    wrapField(
+      t("elements.batch.spriteReferenceLabel", "Sprite reference"),
+      select,
+    ),
+    applyButton,
+  );
   return container;
 }

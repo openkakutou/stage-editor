@@ -1,5 +1,6 @@
 import { ShortcutManager } from "@openkakutou/web-ui-kit";
 import { describe, expect, it } from "vitest";
+import { initAppI18n } from "../i18n/i18n.ts";
 import { renderShortcutsPanelSection } from "./shortcuts-panel-section.ts";
 
 function memoryStorage(): Storage {
@@ -111,5 +112,28 @@ describe("renderShortcutsPanelSection", () => {
     expect(panelEl).toBe(root.querySelector("wuik-shortcuts-panel"));
     // biome-ignore lint/suspicious/noExplicitAny: reading a custom element's own JS property, not part of any typed DOM interface.
     expect((panelEl as any).manager).toBe(manager);
+  });
+
+  it("retranslates the header label in place on a locale change, without collapsing the body (backlog item 010)", async () => {
+    const manager = newManager();
+    const root = document.createElement("div");
+    const i18n = await initAppI18n();
+
+    renderShortcutsPanelSection(root, manager);
+    const toggle = root.querySelector<HTMLElement>(
+      ".shortcuts-panel-section__toggle",
+    );
+    const body = root.querySelector<HTMLElement>(
+      ".shortcuts-panel-section__body",
+    );
+    toggle?.click(); // collapse it, to prove the locale change doesn't reset this
+    expect(body?.hidden).toBe(true);
+
+    await i18n.changeLanguage("fr");
+
+    expect(toggle?.textContent).toBe("Raccourcis clavier");
+    expect(body?.hidden).toBe(true);
+
+    await i18n.changeLanguage("en");
   });
 });

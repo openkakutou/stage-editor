@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The app is now available in English and French. A language switcher in the toolbar lets you change it live, without reloading the page, and your choice is remembered the next time you visit. The language is detected from your browser by default.
+
 ## [0.10.0] - 2026-09-08
 
 ### Added

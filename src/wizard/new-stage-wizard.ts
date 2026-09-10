@@ -8,6 +8,7 @@
 // .vibe/decisions/003-new-stage-defaults-and-unsaved-changes-guard.md.
 import type { StageDocument } from "../document/stage-document-store.ts";
 import { hasUnsavedStageChanges as defaultHasUnsavedChanges } from "../document/stage-document-store.ts";
+import { t } from "../i18n/i18n.ts";
 import { STAGE_TEMPLATES, createBlankStage } from "./new-stage-defaults.ts";
 
 export interface NewStageWizardOptions {
@@ -19,8 +20,10 @@ export interface NewStageWizardOptions {
   confirmDiscard?: (message: string) => boolean;
 }
 
-const DISCARD_CONFIRM_MESSAGE =
-  "You have unsaved changes to the current stage. Starting a new stage will discard them. Continue?";
+/** Looked up by a template's stable `id` (`` `wizard.templates.${id}` ``) rather than by its own English `label` field, so that field stays usable as the translation's own fallback `defaultValue` without the two ever needing to be kept in lockstep by hand -- same convention `lifebar-editor`'s own New Lifebar Wizard established. */
+function translatedTemplateLabel(id: string, defaultLabel: string): string {
+  return t(`wizard.templates.${id}`, defaultLabel);
+}
 
 function blankDocument(): StageDocument {
   return {
@@ -65,7 +68,11 @@ export function renderNewStageWizard(
     options.confirmDiscard ?? ((message: string) => window.confirm(message));
 
   function createIfConfirmed(build: () => StageDocument): void {
-    if (hasUnsavedChanges() && !confirmDiscard(DISCARD_CONFIRM_MESSAGE)) {
+    const message = t(
+      "wizard.discardConfirm",
+      "You have unsaved changes to the current stage. Starting a new stage will discard them. Continue?",
+    );
+    if (hasUnsavedChanges() && !confirmDiscard(message)) {
       return;
     }
     options.onCreated(build());
@@ -75,7 +82,7 @@ export function renderNewStageWizard(
   panel.className = "new-stage-wizard";
 
   const heading = document.createElement("h2");
-  heading.textContent = "Start a New Stage";
+  heading.textContent = t("wizard.heading", "Start a New Stage");
   panel.appendChild(heading);
 
   const actions = document.createElement("div");
@@ -83,7 +90,7 @@ export function renderNewStageWizard(
 
   const blankButton = document.createElement("wuik-button");
   blankButton.dataset.action = "new-stage-blank";
-  blankButton.textContent = "Blank Stage";
+  blankButton.textContent = t("wizard.blankButton", "Blank Stage");
   blankButton.addEventListener("click", () => {
     createIfConfirmed(blankDocument);
   });
@@ -94,7 +101,10 @@ export function renderNewStageWizard(
     templateButton.setAttribute("variant", "secondary");
     templateButton.dataset.action = "new-stage-template";
     templateButton.dataset.templateId = template.id;
-    templateButton.textContent = template.label;
+    templateButton.textContent = translatedTemplateLabel(
+      template.id,
+      template.label,
+    );
     templateButton.addEventListener("click", () => {
       createIfConfirmed(() => templateDocument(template.id));
     });
