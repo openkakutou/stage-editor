@@ -98,4 +98,31 @@ describe("resolveModelTransform", () => {
     expect(result.position[0]).toBe(7);
     expect(result.scale[0]).toBe(9);
   });
+
+  it("falls back to a default scale of 1 on every axis when a freshly-assigned model has never had its scale configured (a blank stage's [Model] declares 0)", () => {
+    // A collapsed 0×0×0 scale renders as a literally invisible model — the
+    // exact same "section never configured" zero-value landmine
+    // `resolveCameraParams` already guards for fov/near/far, applied here to
+    // the one degenerate case `stage-viewer-web`'s original, read-only
+    // `resolveModelTransform` never had to handle: an editor can preview a
+    // model against a truly blank, freshly-created stage.
+    const result = resolveModelTransform(
+      model({ scaleX: 0, scaleY: 0, scaleZ: 0 }),
+    );
+    expect(result.scale).toEqual([1, 1, 1]);
+  });
+
+  it("falls back to a default scale of 1 on a per-axis basis for a negative value", () => {
+    const result = resolveModelTransform(
+      model({ scaleX: -2, scaleY: 3, scaleZ: 4 }),
+    );
+    expect(result.scale).toEqual([1, 3, 4]);
+  });
+
+  it("keeps the stage's own declared scale unchanged when every axis is already positive", () => {
+    const result = resolveModelTransform(
+      model({ scaleX: 0.0141, scaleY: 0.0141, scaleZ: 0.0141 }),
+    );
+    expect(result.scale).toEqual([0.0141, 0.0141, 0.0141]);
+  });
 });

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Automated screenshot comparison tests now cover the 3D model editor's live preview (a freshly-assigned model at its default placement, and after a placement field edit), guarding against a rendering regression going unnoticed. They run as their own step in the deployment pipeline, separate from the regular test suite.
+
+### Fixed
+
+- A freshly-assigned 3D model on a brand-new stage no longer previews as a blank canvas. Its placement fields (Scale) now default to a visible size until you set your own, the same way the 3D camera's fields already did.
+
 ## [0.11.0] - 2026-09-10
 
 ### Added

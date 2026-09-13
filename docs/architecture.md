@@ -182,6 +182,18 @@ for the full reasoning, including why the model/`.hdr` file must be
 re-selected each editing session (this app doesn't yet thread the
 originally loaded folder's file listing through to the editor screens).
 
+`model-camera.ts`'s `resolveModelTransform` falls back to a scale of `1` on
+any axis whose stage-declared value is `0` or negative — the same
+zero-value-landmine fallback its sibling `resolveCameraParams` already
+applies to `fov`/`near`/`far`. A brand-new blank stage's `Model` starts at
+`scaleX = scaleY = scaleZ = 0` before a user ever touches these fields, and
+a `0×0×0` three.js scale collapses a model to a single point, rendering as
+a blank preview — a real bug backlog item 011's own visual-regression
+baselines caught (see `.vibe/decisions/010` and `docs/testing.md`'s
+"Visual regression tests" section). Only the derived preview transform
+gets the fallback; the raw stored field (and the number shown in the Scale
+input) stays at `0` until the user sets it, exactly like the camera fields.
+
 ## WebAssembly dependency
 
 `public/wasm/` (the `stage.wasm` binary and its `wasm_exec.js` loader) is

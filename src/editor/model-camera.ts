@@ -10,6 +10,7 @@ import type { BGdef, Model } from "../wasm/types.ts";
 const DEFAULT_FOV = 45;
 const DEFAULT_NEAR = 0.1;
 const DEFAULT_FAR = 10000;
+const DEFAULT_SCALE = 1;
 
 export interface CameraParams {
   readonly fov: number;
@@ -41,10 +42,27 @@ export interface ModelTransform {
   readonly scale: readonly [number, number, number];
 }
 
-/** Resolves the model's placement/scale from the stage's `[Model]` data. */
+/**
+ * Resolves the model's placement/scale from the stage's `[Model]` data.
+ *
+ * Scale falls back to `1` per axis whenever the stage declares `0` or a
+ * negative value — the same "section never configured" zero-value landmine
+ * `resolveCameraParams` above already guards for fov/near/far. A real
+ * Ikemen GO stage always declares an explicit non-zero scale (Ikemen's own
+ * "[Model]" section has no meaningful all-zero case), but a freshly-created
+ * blank stage's `Model` starts at `0,0,0` before a user ever touches these
+ * fields — a collapsed 0×0×0 scale renders as a literally invisible model,
+ * which `stage-viewer-web`'s original, read-only version of this function
+ * never had to handle since it only ever loads real, already-configured
+ * stage files.
+ */
 export function resolveModelTransform(model: Model): ModelTransform {
   return {
     position: [model.offsetX, model.offsetY, model.offsetZ],
-    scale: [model.scaleX, model.scaleY, model.scaleZ],
+    scale: [
+      model.scaleX > 0 ? model.scaleX : DEFAULT_SCALE,
+      model.scaleY > 0 ? model.scaleY : DEFAULT_SCALE,
+      model.scaleZ > 0 ? model.scaleZ : DEFAULT_SCALE,
+    ],
   };
 }
