@@ -3,6 +3,7 @@ package ui
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -141,6 +142,9 @@ func TestEditor_SaveFailure_KeepsEditsAndSaveEnabled(t *testing.T) {
 	defer os.Chmod(dir, 0o700)
 	if os.Geteuid() == 0 {
 		t.Skip("permissions are not enforced for root")
+	}
+	if runtime.GOOS == "windows" {
+		t.Skip("read-only directories are not enforced on Windows")
 	}
 
 	e.save()
