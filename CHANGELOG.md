@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- A native desktop app is now available for Windows, Mac (Apple silicon and Intel) and Linux, alongside the web editor. Open a stage's `.def` file, check its name, author, BG element count, camera bounds and music, rename it, and save. Saving without changes leaves the file untouched. Each release page offers a download for every system.
+
 ## [0.12.0] - 2026-09-13
 
 ### Added

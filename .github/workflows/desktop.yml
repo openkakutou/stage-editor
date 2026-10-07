@@ -1,0 +1,113 @@
+name: Desktop builds
+
+# Native Fyne app (desktop/), built per OS. Every push and PR tests and builds
+# it on Linux, macOS (Apple silicon and Intel) and Windows; a version tag also
+# attaches the packaged apps to that tag's GitHub Release. See roadmap decision 022.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v[0-9]*.[0-9]*.[0-9]*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Tags are never cancelled: a release build must finish and attach its assets.
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            goarch: amd64
+            asset: stage-editor-linux-amd64.tar.gz
+          - os: macos-latest
+            goarch: arm64
+            asset: stage-editor-macos-arm64.zip
+          # Intel Mac: cross-compiled on the Apple silicon runner.
+          - os: macos-latest
+            goarch: amd64
+            asset: stage-editor-macos-amd64.zip
+          - os: windows-latest
+            goarch: amd64
+            asset: stage-editor-windows-amd64.zip
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    # Needed only to attach assets to the tag's release.
+    permissions:
+      contents: write
+    env:
+      GOARCH: ${{ matrix.goarch }}
+      CGO_ENABLED: '1'
+    defaults:
+      run:
+        shell: bash
+        working-directory: desktop
+    steps:
+      - name: Check out code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: desktop/go.mod
+          cache-dependency-path: desktop/go.sum
+
+      - name: Install Linux GUI libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc pkg-config libgl1-mesa-dev xorg-dev libwayland-dev libxkbcommon-dev
+
+      - name: Test
+        run: go test ./...
+
+      - name: Build
+        run: |
+          mkdir -p dist
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            go build -ldflags "-s -w -H=windowsgui" -o dist/stage-editor.exe .
+          else
+            go build -ldflags "-s -w" -o dist/stage-editor .
+          fi
+
+      - name: Package
+        run: |
+          cd dist
+          case "${{ matrix.asset }}" in
+            *.tar.gz) tar -czf "${{ matrix.asset }}" stage-editor ;;
+            *.zip)
+              if [ "$RUNNER_OS" = "Windows" ]; then
+                powershell -Command "Compress-Archive -Path stage-editor.exe -DestinationPath ${{ matrix.asset }}"
+              else
+                zip "${{ matrix.asset }}" stage-editor
+              fi ;;
+          esac
+
+      - name: Keep build as a workflow artifact
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ${{ matrix.asset }}
+          path: desktop/dist/${{ matrix.asset }}
+
+      # Stable per-OS URL: https://github.com/openkakutou/stage-editor/releases/latest/download/<asset>
+      # Creating the release is tolerated to fail: the three matrix jobs and a
+      # concurrent release tool may all race to create it, and whichever loses
+      # simply attaches its asset to the release the winner made.
+      - name: Attach to the GitHub Release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" --notes "Release $TAG" 2>/dev/null \
+            || gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
+          gh release upload "$TAG" "dist/${{ matrix.asset }}" --repo "$GITHUB_REPOSITORY" --clobber

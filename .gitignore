@@ -11,3 +11,6 @@ public/wasm/
 # tests/visual/**/*.spec.ts-snapshots/, never here.
 /test-results/
 /playwright-report/
+
+# Desktop build output
+desktop/dist/
