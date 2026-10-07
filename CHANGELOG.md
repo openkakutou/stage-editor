@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-10-07
+
 ### Added
 
 - A native desktop app is now available for Windows, Mac (Apple silicon and Intel) and Linux, alongside the web editor. Open a stage's `.def` file, check its name, author, BG element count, camera bounds and music, rename it, and save. Saving without changes leaves the file untouched. Each release page offers a download for every system.
@@ -86,7 +88,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The app now uses the shared OpenKakutou design system for its layout and visual style, and can load and save a stage file (background, camera, and layer data) through the underlying stage library — the on-screen file loading, editing, and save screens themselves come in later updates.
 
-[Unreleased]: https://github.com/openkakutou/stage-editor/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/openkakutou/stage-editor/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/openkakutou/stage-editor/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/openkakutou/stage-editor/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/openkakutou/stage-editor/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/openkakutou/stage-editor/compare/v0.9.0...v0.10.0
