@@ -56,7 +56,7 @@
 }
 
 .stage-file-input__dropzone--dragging {
-  border-color: var(--wuik-color-accent);
+  border-color: var(--wuik-color-primary);
   background-color: var(--wuik-color-surface);
 }
 
@@ -71,7 +71,7 @@
 .stage-file-input__hint {
   margin: 0;
   font-size: var(--wuik-font-size-sm);
-  color: var(--wuik-color-text-secondary);
+  color: var(--wuik-color-text-muted);
 }
 
 .stage-file-input__selection {
@@ -84,13 +84,13 @@
 .stage-file-input__status {
   min-height: 1.2em;
   font-size: var(--wuik-font-size-sm);
-  color: var(--wuik-color-text-secondary);
+  color: var(--wuik-color-text-muted);
 }
 
 .stage-file-input__status--error {
   padding-left: var(--wuik-space-2);
   color: var(--wuik-color-text);
-  border-left: 3px solid var(--wuik-color-danger);
+  border-left: 3px solid var(--wuik-color-error);
 }
 
 .stage-file-input__reset {
@@ -105,7 +105,7 @@
  * Stage Boundaries are deliberately separate `wuik-panel`s, not sections
  * in one flat list, so the two never read as one group — see
  * .vibe/glossary.md ("Camera Bounds"/"Stage Boundaries" — do not confuse).
- * Error text stays on `--wuik-color-text`, never `--wuik-color-danger`,
+ * Error text stays on `--wuik-color-text`, never `--wuik-color-error`,
  * matching that same convention.
  */
 
@@ -127,7 +127,7 @@
   margin: 0;
   font-size: var(--wuik-font-size-base);
   font-weight: var(--wuik-font-weight-medium);
-  color: var(--wuik-color-text-secondary);
+  color: var(--wuik-color-text-muted);
 }
 
 .characteristics-editor__camera-bounds,
@@ -168,16 +168,16 @@
 }
 
 .characteristics-editor__input:focus-visible {
-  outline: 2px solid var(--wuik-color-focus-ring);
+  outline: 2px solid var(--wuik-color-focus);
   outline-offset: -2px;
 }
 
 .characteristics-editor__input.is-invalid {
-  border-color: var(--wuik-color-danger);
+  border-color: var(--wuik-color-error);
 }
 
 .characteristics-editor__input.is-invalid:focus-visible {
-  outline-color: var(--wuik-color-danger);
+  outline-color: var(--wuik-color-error);
 }
 
 .characteristics-editor__field-error {
@@ -191,7 +191,7 @@
  * shape (toggle/entries), adapted for a form-per-row instead of a flat
  * key/value entry list, and for add/remove (lifebar's own version only
  * ever edits pre-existing sections). Error text stays on
- * `--wuik-color-text`, never `--wuik-color-danger`, matching
+ * `--wuik-color-text`, never `--wuik-color-error`, matching
  * `.characteristics-editor__field-error` above.
  */
 
@@ -222,7 +222,7 @@
  */
 .elements-editor__row--selected {
   background-color: var(--wuik-color-surface);
-  border-color: var(--wuik-color-accent);
+  border-color: var(--wuik-color-primary);
 }
 
 .elements-editor__header {
@@ -289,7 +289,7 @@
 }
 
 .elements-editor__input.is-invalid {
-  border-color: var(--wuik-color-danger);
+  border-color: var(--wuik-color-error);
 }
 
 .elements-editor__field-error {
@@ -323,7 +323,7 @@
   gap: var(--wuik-space-3);
   padding: var(--wuik-space-3);
   background-color: var(--wuik-color-surface);
-  border: 1px solid var(--wuik-color-accent);
+  border: 1px solid var(--wuik-color-primary);
   border-radius: var(--wuik-space-1);
 }
 
@@ -356,7 +356,7 @@
 .elements-editor__deletion-status {
   margin: 0 0 var(--wuik-space-2);
   font-size: var(--wuik-font-size-sm);
-  color: var(--wuik-color-text-secondary);
+  color: var(--wuik-color-text-muted);
 }
 
 .elements-editor__deletion-status:empty {
@@ -371,8 +371,8 @@
  * Scaling/Player Start Depth panels, so a user isn't left wondering why some
  * 3D fields work with no model assigned and others don't (see
  * .vibe/decisions/004, point 3). Error/hint/reference text stays on
- * `--wuik-color-text`/`--wuik-color-text-secondary`, never
- * `--wuik-color-danger`, matching every other non-error status text
+ * `--wuik-color-text`/`--wuik-color-text-muted`, never
+ * `--wuik-color-error`, matching every other non-error status text
  * convention in this app — the re-select notice states current capability,
  * not a problem.
  */
@@ -395,7 +395,7 @@
   margin: 0;
   font-size: var(--wuik-font-size-base);
   font-weight: var(--wuik-font-weight-medium);
-  color: var(--wuik-color-text-secondary);
+  color: var(--wuik-color-text-muted);
 }
 
 .model-editor__asset-field {
@@ -408,7 +408,7 @@
 .model-editor__asset-reference {
   margin: 0;
   font-size: var(--wuik-font-size-sm);
-  color: var(--wuik-color-text-secondary);
+  color: var(--wuik-color-text-muted);
 }
 
 .model-editor__drop-zone {
@@ -418,7 +418,7 @@
 .model-editor__hint {
   margin: 0;
   font-size: var(--wuik-font-size-sm);
-  color: var(--wuik-color-text-secondary);
+  color: var(--wuik-color-text-muted);
 }
 
 .model-editor__remove-area {
@@ -466,16 +466,16 @@
 }
 
 .model-editor__input:focus-visible {
-  outline: 2px solid var(--wuik-color-focus-ring);
+  outline: 2px solid var(--wuik-color-focus);
   outline-offset: -2px;
 }
 
 .model-editor__input.is-invalid {
-  border-color: var(--wuik-color-danger);
+  border-color: var(--wuik-color-error);
 }
 
 .model-editor__input.is-invalid:focus-visible {
-  outline-color: var(--wuik-color-danger);
+  outline-color: var(--wuik-color-error);
 }
 
 .model-editor__field-error {
@@ -497,7 +497,7 @@
 /*
  * Save/export (backlog item 004). Error text (a serialization failure
  * reported by the WASM bridge) stays on `--wuik-color-text`, never
- * `--wuik-color-danger`, matching every other error-text convention in
+ * `--wuik-color-error`, matching every other error-text convention in
  * this app.
  */
 
@@ -505,5 +505,5 @@
   min-height: 1.2em;
   margin: var(--wuik-space-2) var(--wuik-space-4) 0;
   font-size: var(--wuik-font-size-sm);
-  color: var(--wuik-color-text-secondary);
+  color: var(--wuik-color-text-muted);
 }
