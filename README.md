@@ -30,7 +30,7 @@ npm update
 Download a specific version of the `stage` library's WebAssembly build (needed to load or save a stage):
 
 ```sh
-npm run wasm:download -- v0.13.0
+npm run wasm:download -- v0.15.0
 ```
 
 Download a specific version of the `sff` library's WebAssembly build (needed to validate a background element's sprite reference against the loaded sprite sheet):
