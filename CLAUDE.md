@@ -22,6 +22,10 @@ A WASM build (`stage.wasm` + `wasm_exec.js`, exposing both the read and write su
 
 **The current pin lives in exactly one place: the `wasm:download -- vX.Y.Z` argument in `.github/workflows/deploy-pages.yml`.** That is the source of truth a `stage` release should update — see `stage`'s own `CLAUDE.md` ("WASM release propagation") and `roadmap`'s `.vibe/decisions/016-wasm-version-pinning-push-based-propagation.md` for the org-wide policy: exact pins, bumped by the producer's own release step, no scheduled job. When bumping by hand, also update the illustrative version number in this section and in `README.md`'s install instructions so they don't drift into stale examples.
 
+## Compatibility target (MUST) <!-- keep -->
+
+Every feature and fix touching MUGEN/Ikemen GO formats or behavior must be compatible with **both MUGEN 1.0/1.1 and Ikemen GO**, extensions included, and validated against real community files — never MUGEN-only, never from memory. Where the two engines diverge, record the divergence and the chosen behavior in an ADR, and ground engine-behavior claims in a source (fixture, doc, engine source), marking anything unverified. This is an org-wide rule (`roadmap/repos.md`), already settled: do not ask the user whether it applies, and carry it as a 🔒 MUST in every need framing, implementer prompt and review.
+
 ## Architecture
 
 Early scaffold stage — only the build setup and an entry point exist so far.
