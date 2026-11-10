@@ -36,7 +36,7 @@ npm run wasm:download -- v0.16.0
 Download a specific version of the `sff` library's WebAssembly build (needed to validate a background element's sprite reference against the loaded sprite sheet):
 
 ```sh
-npm run wasm:download:sff -- v0.3.1
+npm run wasm:download:sff -- v0.4.0
 ```
 
 The desktop app needs no Node.js. Download the build for your system from the [latest release](https://github.com/openkakutou/stage-editor/releases/latest): `stage-editor-windows-amd64.zip`, `stage-editor-macos-arm64.zip` (Apple silicon), `stage-editor-macos-amd64.zip` (Intel Mac) or `stage-editor-linux-amd64.tar.gz`. Builds are not signed yet, so macOS and Windows may warn on first launch.
